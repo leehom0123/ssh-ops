@@ -547,7 +547,7 @@ class SSHConnection(TransferMixin, JobsMixin):
         if rc == -1:
             result["stderr"] = (
                 result["stderr"] +
-                f"\n[ssh-alias-mcp] command timed out after {timeout}s; "
+                f"\n[ssh-ops] command timed out after {timeout}s; "
                 "the channel was closed but the remote process may still be running"
             ).strip("\n")
         return self._strip_sudo_noise(result) if sudo else result

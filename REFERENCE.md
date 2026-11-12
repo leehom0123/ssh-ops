@@ -30,7 +30,7 @@
 
 ```
 ├── <skills-dir>/
-│   └── ssh-alias-mcp/         # Core code
+│   └── ssh-ops/         # Core code
 │       ├── SKILL.md           # AI Agent skill definition
 │       ├── REFERENCE.md       # Detailed reference (this file)
 │       ├── CLI_USAGE.md       # CLI commands reference

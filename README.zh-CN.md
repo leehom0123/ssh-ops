@@ -1,4 +1,4 @@
-# ssh-alias-mcp
+# ssh-ops
 
 [English](README.md) | [中文](README.zh-CN.md) &nbsp;·&nbsp; [SKILL](SKILL.md) &nbsp;·&nbsp; [详细参考](REFERENCE.zh-CN.md) &nbsp;·&nbsp; [CLI](CLI_USAGE.zh-CN.md) &nbsp;·&nbsp; [安装](INSTALL.zh-CN.md)
 
@@ -12,12 +12,13 @@ AI 驱动的服务器运维工具。YAML 配置服务器，执行命令、部署
 - **默认安全** — 认证前校验主机密钥、命令参数统一 shell 转义、sudo 密码经 stdin 传递（不出现在命令行）
 - **长任务、大日志** — 后台任务与按字节分页的远端文本读写，长操作不再占住 MCP 通道
 - **stdio 或 HTTP** — 同一个服务，默认走 stdio，也可以用 Streamable HTTP 端点（`--http`，可配 bearer token）
+- **脚本化部署** — 打包 → 上传 → 服务器脚本 → 健康检查，direct/compile/docker/static 模板在 [deploy/](deploy/README.zh-CN.md)
 
 ## 快速开始
 
 ```bash
 # AI Agent (MCP)
-claude mcp add ssh-alias-mcp python <路径>/mcp_server.py
+claude mcp add ssh-ops python <路径>/mcp_server.py
 
 # CLI
 python cli.py my-server run "uptime"
@@ -29,11 +30,12 @@ python cli.py my-server alias deploy
 - [SKILL.md](SKILL.md) — AI Agent 技能定义（MCP 工具、快速参考）
 - [REFERENCE.zh-CN.md](REFERENCE.zh-CN.md) — 服务器配置、别名、安全、文件传输（中文版）
 - [CLI_USAGE.zh-CN.md](CLI_USAGE.zh-CN.md) — CLI 命令参考（中文版）
+- [deploy/](deploy/README.zh-CN.md) — 脚本化部署流程与服务器脚本模板
 - [INSTALL.zh-CN.md](INSTALL.zh-CN.md) — AI Agent 安装指南（中文版）
 
 ## 一句话 Agent 安装（把下面这句话复制给你的 Agent）
 
-安装请阅读 https://github.com/leehom0123/ssh-alias-mcp/blob/main/INSTALL.zh-CN.md，按说明配置好 SKILL 及安装 MCP 服务。
+安装请阅读 https://github.com/leehom0123/ssh-ops/blob/main/INSTALL.zh-CN.md，按说明配置好 SKILL 及安装 MCP 服务。
 
 ## 使用场景
 
@@ -89,4 +91,4 @@ server:
 
 ## 链接
 
-- [GitHub](https://github.com/leehom0123/ssh-alias-mcp)
+- [GitHub](https://github.com/leehom0123/ssh-ops)

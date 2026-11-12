@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SSH Client CLI - Command line entry point for ssh-alias-mcp.
+"""SSH Client CLI - Command line entry point for ssh-ops.
 
 Run `python cli.py --help` (or with no arguments) for full usage.
 HELP below is the single source of truth for the usage text.

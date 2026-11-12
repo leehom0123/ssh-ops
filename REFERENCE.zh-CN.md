@@ -30,7 +30,7 @@
 
 ```
 ├── <skills-dir>/
-│   └── ssh-alias-mcp/         # 核心代码
+│   └── ssh-ops/         # 核心代码
 │       ├── SKILL.md           # AI Agent 技能定义
 │       ├── REFERENCE.md       # 详细参考文档（英文版）
 │       ├── REFERENCE.zh-CN.md # 详细参考文档（中文版）

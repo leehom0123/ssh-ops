@@ -1,4 +1,4 @@
-"""ssh-alias-mcp core, split by domain.
+"""ssh-ops core, split by domain.
 
 The package keeps the old single-module surface: ``from ssh_client import
 pool`` (and the helpers the CLI imports) work exactly as before.

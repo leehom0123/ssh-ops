@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unified live E2E pytest suite for the ssh-alias-mcp CLI (all shells).
+"""Unified live E2E pytest suite for the ssh-ops CLI (all shells).
 
 Replaces the five old script-style live suites with ONE parameterized pytest
 suite. Shell differences (bash / cmd / powershell) are handled through the
