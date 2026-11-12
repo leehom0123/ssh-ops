@@ -1,96 +1,44 @@
 ---
 name: ssh-ops
 description: >
-  SSH server management CLI. Run remote commands, deploy scripts, restart services,  check logs, upload/download files, read/write remote text files, run background jobs, and manage aliases across Linux (bash) and Windows  (cmd/powershell) servers. Includes a scripted deployment workflow  (package -> upload -> server script -> health check) under deploy/.  Use when managing servers, deploying code, checking logs,  restarting services, uploading scripts, or running SSH commands. 
-  Trigger keywords:  deploy, release, ship, server health, SSH, run on server, upload script,
-  download file, server alias, 部署, 上线, 发布, 重启, 查看日志, 服务器健康检查.
+  SSH server management CLI. Run remote commands, deploy scripts, restart services,
+  check logs, upload/download files, read/write remote text files, run background
+  jobs, and manage aliases across bash/cmd/powershell servers.
+  Trigger keywords: deploy, release, ship, server health, SSH, run on server,
+  upload script, download file, server alias, 部署, 上线, 发布, 重启, 查看日志, 服务器健康检查.
 ---
 
-# ssh-ops CLI
+# ssh-ops CLI 技能入口
 
-## Quick Start
+先用 `list-servers` 查名称，再用 `list-aliases` 查可复用操作。所有命令在仓库目录执行；其他目录需使用 `cli.py` 的绝对路径。安装见[安装指南](docs/install.zh-CN.md)。
 
-```bash
-# Shortcut (defined in AGENTS.md)
-wslts bash ~/.ssh-cli.sh <server> run "<command>"
-wslts bash ~/.ssh-cli.sh <server> upload <file> -n <name> --overwrite
+## 命令速查
 
-# Full CLI
-python cli.py <server> <subcommand> [args...] [-s] [-t SECS]
-```
+下表服务器操作均以 `python cli.py <server>` 开头。完整选项和默认值只在 [CLI 参考](docs/cli.zh-CN.md)中维护。
 
-## Commands
+| 用途 | 命令 |
+|---|---|
+| 发现服务器 | `python cli.py list-servers` |
+| 管理本地配置 | `python cli.py create-server/update-server/copy-server/delete-server ...`，按 CLI 参考选择单个命令 |
+| 查别名、运行别名 | `list-aliases`、`alias <name>` |
+| 执行命令 | `run '<command>'`；复杂命令用 `run -` 从 stdin 读取 |
+| 上传与运行脚本 | `upload <local>`、`run-script <name>`、`upload-all`、`list-scripts` |
+| 普通文件 | `upload-file <local> <remote>`、`download-file <remote> <local>` |
+| 目录与脚本下载 | `download <remote> <local>`、`download-script <name> <local>` |
+| 文本读写 | `read-file <remote>`、`write-file <remote> < input.txt` |
+| 长任务 | `job-start '<command>'` → `job-status <id>`；需终止时用 `job-kill <id>` |
+| 任务列表 | `job-list`；清理前先确认用户授权 |
 
-```bash
-python cli.py list-servers                                    # List all servers
-python cli.py create-server <name> <config.yml>               # Create server config
-python cli.py update-server <name> <patch.yml> [--replace]    # Update/replace config
-python cli.py copy-server <source> <new-name>                 # Copy server config
-python cli.py delete-server <name>                            # Delete server config
-python cli.py <server> run "<cmd>" [-s] [-t sec]             # Run command (real-time stream)
-python cli.py <server> run-script <name> [-s] [-t sec]       # Run uploaded script
-python cli.py <server> alias <name>                           # Run alias (sudo from YAML)
-python cli.py <server> upload <path> [-r] [-s] [-n NAME] [-t sec]  # Upload script
-python cli.py <server> upload-file <local> <remote> [-s] [-x] [-t sec]  # Upload file
-python cli.py <server> upload-all [-s] [-t sec]              # Upload all alias scripts
-python cli.py <server> download <remote> <local> [-s] [-p REGEX] [-t sec]  # Download file/dir
-python cli.py <server> download-script <name> <local> [-s] [-t sec]  # Download script from scripts_dir
-python cli.py <server> download-file <remote> <local> [-s] [-t sec]  # Download one file to explicit path
-python cli.py <server> read-file <remote> [-o BYTES] [-l MAX] [-s]  # Read remote text slice (stderr shows next offset)
-python cli.py <server> write-file <remote> [-a] [-s]  # Write stdin text to remote file
-python cli.py <server> job-start "<cmd>"|- [-s] [-t sec] [-w DIR] [-n NAME]  # Background job (bash servers)
-python cli.py <server> job-status <id> [-n LINES]     # Job state + log tail
-python cli.py <server> job-kill <id>                  # Terminate a running job
-python cli.py <server> job-list [--clean-days N] [-s] # List jobs
-python cli.py <server> list-scripts [-s] [-t sec]            # List remote scripts
-python cli.py <server> list-aliases                          # List aliases (no SSH)
-```
+## 关键注意事项
 
-## Flags
+- 选项放在位置参数之后。不要使用不存在的 `--overwrite`；默认允许覆盖，部分传输命令可用 `--no-overwrite`。
+- sudo 用 CLI 的 `-s`，不在命令里拼密码。别名的权限与超时由 YAML 决定，不受 CLI `-s/-t` 覆盖。
+- 先读原内容再改配置，修改后执行应用校验，再重启。删除配置、清理任务或部署前确认目标。
+- 实时输出用 CLI `run`、`run-script`、`alias`；MCP 不推送执行过程。普通命令超时不保证远端进程已终止。
+- 文本分页、sudo 暂存、命令过滤与路径限制有明确边界，见[运行参考](docs/reference.zh-CN.md)。不要把正则过滤当沙箱。
 
-| Flag | Description |
-|------|-------------|
-| `-s` / `--sudo` | Run as root (upload: stages via /tmp preserving perms; download: /tmp + chown) |
-| `-t` / `--timeout` | Timeout in seconds (default: server `timeout` from YAML) |
-| `-r` / `--run` | (upload) Execute immediately after upload |
-| `-n` / `--name` | (upload) Custom remote filename |
-| `-p` / `--pattern` | (download) Regex filter for filenames |
-| `-x` / `--executable` | (upload-file) Set execute permission on Unix |
-| `-o` / `--offset` | (read-file) Byte offset to start from |
-| `-l` / `--length` | (read-file) Max bytes to return |
-| `-a` / `--append` | (write-file) Append instead of overwrite |
-| `-w` / `--workdir` | (job-start) Directory to run the job in |
-| `--clean-days` | (job-list) Delete finished jobs older than N days |
-| `--no-overwrite` | (upload-file/download/download-file/download-script) Fail if destination exists |
+## 部署
 
-Flags are parsed from the tail of the arguments only, so flags inside the
-command text (e.g. `run "grep -s foo"`) are preserved.
+按[部署专章](docs/deploy.zh-CN.md)先确认服务器、所在地、模式、目录、端口和检查地址，再生成项目专用的本地脚本与服务器脚本。模板位于 [deploy/scripts/](deploy/scripts/)，不是无需修改即可运行的通用发布器。所有远端交互走此 CLI；镜像源与健康检查规则以部署专章为准。
 
-## Deploy (scripted pipeline)
-
-Full workflow lives in [deploy/README.md](deploy/README.md): collect target
-server/mode/port first, generate `{project}-deploy-local.sh` +
-`{project}-deploy-server.sh` from the templates in `deploy/scripts/`
-(direct / compile / docker / static), then the local script packages a
-tarball, uploads package + server script via `upload-file`, runs
-`run-script`, and verifies with a health check. All server IO goes through
-this CLI (sudo, proxy fallback, allow-lists apply). Mainland-CN servers need
-pip/npm/Docker mirrors in the server script — see deploy/REFERENCE.md.
-
-## Notes
-
-- **sudo** — Use `-s` flag, never inline `sudo -S` in commands (password is sent via stdin automatically)
-- **Real-time stream** — `run`/`run-script`/`alias` stream via `stream_cb`, not buffered
-- **Docker build** — Add `--progress=plain` for real-time output. Never `| tail` (blocks until done)
-- **Shell** — Set `shell` in server YAML: `bash` / `cmd` / `powershell`
-- **Transfer reuse** — `upload_file`/`download_file` are the single-file primitives; `upload`/`upload-all` reuse the upload path, `download-script` reuses the download path (scripts differ only in the constrained `scripts_dir` path).
-- **Git-Bash paths** — remote POSIX paths pass through unchanged when invoked from Git-Bash; the CLI handles the MSYS argument rewrite itself (no `MSYS2_ARG_CONV_EXCL` workaround).
-- **Text files** — `read-file` pages by bytes (stderr hints the next offset); `write-file` reads content from stdin, so `$`, quotes and newlines can't be mangled.
-- **Background jobs** — `job-start` returns a job id; state lives on the remote (`scripts_dir/.jobs`), survives restarts. `-t` bounds the job's own lifetime (0 = unlimited). Bash servers only.
-
-## More
-
-- Server config, aliases, security, file transfer → [REFERENCE.md](REFERENCE.md)
-- Full CLI reference → [CLI_USAGE.md](CLI_USAGE.md)
-- Scripted deploy pipeline → [deploy/README.md](deploy/README.md)
-- AI Agent installation guide → [INSTALL.md](INSTALL.md)
+MCP 形态入口另见 [SKILL.mcp.md](SKILL.mcp.md)。

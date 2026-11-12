@@ -1,94 +1,52 @@
 # ssh-ops
 
-[English](README.md) | [中文](README.zh-CN.md) &nbsp;·&nbsp; [SKILL](SKILL.md) &nbsp;·&nbsp; [详细参考](REFERENCE.zh-CN.md) &nbsp;·&nbsp; [CLI](CLI_USAGE.zh-CN.md) &nbsp;·&nbsp; [安装](INSTALL.zh-CN.md)
+[English](README.md)
 
-AI 驱动的服务器运维工具。YAML 配置服务器，执行命令、部署脚本、管理文件 — AI Agent 和命令行统一接口。
+通过 CLI 或 MCP 管理 SSH 服务器，用 YAML 保存连接配置和可复用的命令别名。
 
-## ✨ 亮点
+## 主要能力
 
-- **一套配置，三种 Shell** — `bash`、`cmd`、`powershell` 通过命令模板自动适配
-- **Alias 系统** — 一行 YAML = 一个 AI 技能，自动暴露为 MCP 工具
-- **MCP + CLI** — 同一套配置、同一个连接池，AI 和人工共用
-- **默认安全** — 认证前校验主机密钥、命令参数统一 shell 转义、sudo 密码经 stdin 传递（不出现在命令行）
-- **长任务、大日志** — 后台任务与按字节分页的远端文本读写，长操作不再占住 MCP 通道
-- **stdio 或 HTTP** — 同一个服务，默认走 stdio，也可以用 Streamable HTTP 端点（`--http`，可配 bearer token）
-- **脚本化部署** — 打包 → 上传 → 服务器脚本 → 健康检查，direct/compile/docker/static 模板在 [deploy/](deploy/README.zh-CN.md)
+- 命令执行、脚本运行、SFTP 传输和远端文本编辑共用一套 Python 核心。
+- CLI 面向终端和 agent；MCP 服务支持 stdio 与 HTTP 两种传输。
+- YAML 别名可自动生成可调用的 MCP 工具。
+- 耗时操作可交给远端后台任务，日志可按字节分页读取。
+- 提供主机密钥校验、命令过滤、路径允许列表和 sudo；适用范围与限制见详细参考。
 
-## 快速开始
+`shell` 为 `bash`、`cmd` 或 `powershell` 选择辅助命令模板，不会把任意命令翻译成另一种 shell 语法。连接只在同一进程内复用，独立的 CLI 与 MCP 进程不共享连接。
+
+## 快速上手
 
 ```bash
-# AI Agent (MCP)
-claude mcp add ssh-ops python <路径>/mcp_server.py
-
-# CLI
-python cli.py my-server run "uptime"
-python cli.py my-server alias deploy
+git clone https://github.com/leehom0123/ssh-ops.git
+cd ssh-ops
+python -m pip install -r requirements.txt
+python cli.py list-servers
 ```
 
-## 文档
+按[配置参考](docs/reference.zh-CN.md#configuration)添加服务器后执行：
 
-- [SKILL.md](SKILL.md) — AI Agent 技能定义（MCP 工具、快速参考）
-- [REFERENCE.zh-CN.md](REFERENCE.zh-CN.md) — 服务器配置、别名、安全、文件传输（中文版）
-- [CLI_USAGE.zh-CN.md](CLI_USAGE.zh-CN.md) — CLI 命令参考（中文版）
-- [deploy/](deploy/README.zh-CN.md) — 脚本化部署流程与服务器脚本模板
-- [INSTALL.zh-CN.md](INSTALL.zh-CN.md) — AI Agent 安装指南（中文版）
+```bash
+python cli.py my-server run "uptime"
+```
 
-## 一句话 Agent 安装（把下面这句话复制给你的 Agent）
-
-安装请阅读 https://github.com/leehom0123/ssh-ops/blob/main/INSTALL.zh-CN.md，按说明配置好 SKILL 及安装 MCP 服务。
+agent 安装见[安装指南](docs/install.zh-CN.md)，可选择装载 CLI 技能或注册 MCP。`list-servers` 只读取本地配置，不连接服务器。
 
 ## 使用场景
 
-### 场景 1：并行部署 5 台服务器
+- **排查故障：**先查服务器和别名，再收集服务日志与系统指标，根据证据分析。工具负责执行命令，不会自动判定故障原因。
+- **修改配置：**读取原文，写入已确认的修改，执行应用自身的校验命令，再重启服务。
+- **运行构建或迁移：**启动后台任务并轮询状态，不必一直占用单次 MCP 请求。
+- **发布版本：**按[脚本化部署流程](docs/deploy.zh-CN.md)执行，为项目明确重启命令和健康检查。
 
-```yaml
-# _shared/common.yml
-aliases:
-  - name: deploy
-    script: deploy.sh
-    sudo: true
-```
+## 文档导航
 
-**AI 工作流：** 你说"部署到所有生产服务器" → AI 读取服务器列表 → 对每台服务器调用 `ssh_run`、`ssh_run_alias` 或 `ssh_alias.prod-01.deploy` 这类动态 alias 工具并行部署 → 汇报结果。无需 SSH 连接信息，无需密码交互。
+| 文档 | 定位 |
+|---|---|
+| [SKILL.md](SKILL.md) | CLI 形态的 agent 入口与命令速查 |
+| [SKILL.mcp.md](SKILL.mcp.md) | MCP 注册、22 个静态工具与动态别名工具 |
+| [CLI 参考](docs/cli.zh-CN.md) | CLI 的准确语法、选项、默认值与输出 |
+| [运行参考](docs/reference.zh-CN.md) | YAML 字段、安全、传输与任务语义、HTTP 协议 |
+| [安装](docs/install.zh-CN.md) | agent 安装与验证 |
+| [部署](docs/deploy.zh-CN.md) | 流程、模板约定、镜像源与故障排查 |
 
-### 场景 2：AI 分析死机原因
-
-```yaml
-aliases:
-  - name: crash-check
-    inline: "journalctl -xe --since '1 hour ago' && dmesg -T | tail -100 && free -h && df -h /"
-```
-
-**之前：** SSH 进服务器 → 手动查日志 → 搜索内核 panic → 分析 core dump → 几个小时
-**AI 工作流：** 你说"服务器崩了，查原因" → AI 用 `ssh_alias.prod-01.crash-check` 抓取日志 → 分析崩溃原因 → 定位 OOM killer → 给出修复建议
-
-### 场景 3：紧急故障排查
-
-```yaml
-aliases:
-  - name: check
-    inline: "docker logs --tail 50 my-app && df -h / && free -h"
-```
-
-**之前：** 打开终端 → SSH → 敲命令 → 复制输出 → 分析
-**AI 工作流：** 你说"程序崩了，帮我看看" → AI 用 `ssh_run`、`ssh_run_alias` 或动态 alias 工具获取日志和指标 → 分析崩溃原因 → 给出修复建议
-
-### 场景 4：跨平台部署
-
-```yaml
-# Linux 服务器
-server:
-  host: "192.168.1.100"
-  shell: bash
-
-# Windows 服务器
-server:
-  host: "10.0.0.50"
-  shell: powershell
-```
-
-**AI 工作流：** 你说"部署到 Linux 和 Windows 服务器" → AI 读取服务器配置 → 对每台服务器使用 `ssh_run`、`ssh_run_alias` 或动态 alias 工具 → 工具自动适配 bash/powershell 命令 → 统一汇报结果
-
-## 链接
-
-- [GitHub](https://github.com/leehom0123/ssh-ops)
+实现入口为 [CLI](cli.py)、[MCP 服务](mcp_server.py)和 [ssh_client/](ssh_client/) 下的领域模块。Python 导入仍保留历史名称 `ssh_client`。

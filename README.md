@@ -1,94 +1,52 @@
-﻿# ssh-ops
+# ssh-ops
 
-[English](README.md) | [中文](README.zh-CN.md) &nbsp;·&nbsp; [SKILL](SKILL.md) &nbsp;·&nbsp; [REFERENCE](REFERENCE.md) &nbsp;·&nbsp; [CLI](CLI_USAGE.md) &nbsp;·&nbsp; [INSTALL](INSTALL.md)
+[中文](README.zh-CN.md)
 
-AI-driven server operations tool. Configure servers in YAML, execute commands, deploy scripts, and manage files — all through a unified interface for AI Agents and CLI.
+SSH operations through a CLI or MCP server, using YAML server configurations and reusable command aliases.
 
-## ✨ Highlights
+## What it provides
 
-- **One config, three shells** — `bash`, `cmd`, `powershell` auto-adapted via command templates
-- **Alias system** — One YAML line = one AI skill, auto-exposed as MCP tools
-- **MCP + CLI** — Same config, same connection pool, shared by AI and humans
-- **Secure by default** — Host key verification before auth, shell-quoted command arguments, sudo passwords via stdin (never in argv)
-- **Long jobs, big logs** — Background jobs and byte-paged remote text I/O keep long operations off the MCP channel
-- **stdio or HTTP** — Same server over stdio (default) or a Streamable HTTP endpoint (`--http`, optional bearer token)
-- **Scripted deploys** — Package → upload → server script → health check, with direct/compile/docker/static templates under [deploy/](deploy/README.md)
+- Commands, scripts, SFTP transfers, and remote text editing through the same Python core.
+- A CLI for terminal use and agents; an MCP server with stdio and HTTP transports.
+- YAML aliases exposed as callable MCP tools.
+- Remote background jobs for long operations, and byte-paged reads for logs.
+- Host-key checks, command filters, path allow-lists, and sudo support with explicit limitations documented in the reference.
 
-## Quick Start
+The `shell` setting selects helper-command templates for `bash`, `cmd`, or `powershell`. It does not translate arbitrary commands between shells. Connections are reused within a process, not shared between separate CLI and MCP processes.
+
+## Quick start
 
 ```bash
-# AI Agent (MCP)
-claude mcp add ssh-ops python <path>/mcp_server.py
-
-# CLI
-python cli.py my-server run "uptime"
-python cli.py my-server alias deploy
+git clone https://github.com/leehom0123/ssh-ops.git
+cd ssh-ops
+python -m pip install -r requirements.txt
+python cli.py list-servers
 ```
+
+Add a server using the [configuration reference](docs/reference.md#configuration), then run:
+
+```bash
+python cli.py my-server run "uptime"
+```
+
+For an agent, follow the [installation guide](docs/install.md) to load the CLI skill or register MCP. No server is contacted by `list-servers`.
+
+## Typical uses
+
+- **Investigate an incident:** list servers and aliases, collect service logs and system metrics, then inspect the evidence. The tool runs commands; it does not diagnose a cause automatically.
+- **Update a configuration:** read the current text, write the reviewed change, and run the application's own validation command before restarting it.
+- **Run a long build or migration:** start a background job and poll its status instead of holding one MCP request open.
+- **Deploy a release:** use the [scripted deployment workflow](docs/deploy.md), with a project-specific restart command and health check.
 
 ## Documentation
 
-- [SKILL.md](SKILL.md) — AI Agent skill definition (MCP tools, quick reference)
-- [REFERENCE.md](REFERENCE.md) — Server configuration, aliases, security, file transfer
-- [CLI_USAGE.md](CLI_USAGE.md) — CLI commands reference
-- [deploy/](deploy/README.md) — Scripted deployment workflow and server script templates
-- [INSTALL.md](INSTALL.md) — AI Agent installation guide
+| Document | Purpose |
+|---|---|
+| [SKILL.md](SKILL.md) | CLI agent entry point and command quick reference |
+| [SKILL.mcp.md](SKILL.mcp.md) | MCP registration, 22 static tools, and dynamic alias tools |
+| [CLI reference](docs/cli.md) | Exact CLI syntax, options, defaults, and output |
+| [Runtime reference](docs/reference.md) | YAML fields, security, transfer/job semantics, and HTTP protocol |
+| [Installation](docs/install.md) | Agent installation and verification |
+| [Deployment](docs/deploy.md) | Workflow, template contract, mirrors, and troubleshooting |
 
-## Agent Setup in One Sentence (Copy It To Your Agents)
-
-Read https://github.com/leehom0123/ssh-ops/blob/main/INSTALL.md — set up the SKILL and install the MCP service as described.
-
-## Real-World Scenarios
-
-### Scenario 1: Deploy to 5 servers in parallel
-
-```yaml
-# _shared/common.yml
-aliases:
-  - name: deploy
-    script: deploy.sh
-    sudo: true
-```
-
-**AI workflow:** You say "deploy to all prod servers" → AI reads server list → calls `ssh_run`, `ssh_run_alias`, or a dynamic alias tool such as `ssh_alias.prod-01.deploy` on each server in parallel → reports result. No SSH boilerplate, no password prompts.
-
-### Scenario 2: AI analyzes crash cause
-
-```yaml
-aliases:
-  - name: crash-check
-    inline: "journalctl -xe --since '1 hour ago' && dmesg -T | tail -100 && free -h && df -h /"
-```
-
-**Before:** SSH into server → manually check logs → search for kernel panic → analyze core dump → hours later
-**After:** Tell AI "server crashed, check why" → AI calls `ssh_alias.prod-01.crash-check` → analyzes logs → identifies OOM killer → suggests fix
-
-### Scenario 3: Emergency troubleshooting
-
-```yaml
-aliases:
-  - name: check
-    inline: "docker logs --tail 50 my-app && df -h / && free -h"
-```
-
-**Before:** Open terminal → SSH → type commands → copy output → analyze
-**AI workflow:** You say "my app is slow, check it" → AI uses `ssh_run`, `ssh_run_alias`, or a dynamic alias tool to grab logs and metrics → identifies bottleneck → suggests fix
-
-### Scenario 4: Cross-platform deployment
-
-```yaml
-# Linux server
-server:
-  host: "192.168.1.100"
-  shell: bash
-
-# Windows server
-server:
-  host: "10.0.0.50"
-  shell: powershell
-```
-
-**AI workflow:** You say "deploy to both Linux and Windows servers" → AI reads server configs → uses `ssh_run`, `ssh_run_alias`, or dynamic alias tools on each → tool auto-adapts bash/powershell commands → reports unified result
-
-## Links
-
-- [GitHub](https://github.com/leehom0123/ssh-ops)
+Implementation: [CLI](cli.py), [MCP server](mcp_server.py), and the domain modules under [ssh_client/](ssh_client/). Python imports retain the historical `ssh_client` name.

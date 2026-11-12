@@ -20,6 +20,9 @@ CONTAINER_NAME="my-app"
 IMAGE_NAME="my-app:latest"
 PORT=8080
 DOCKER_COMPOSE=false  # Set true to use docker-compose
+HEALTH_URL="http://localhost:$PORT/"
+HEALTH_ATTEMPTS=10
+HEALTH_INTERVAL=3
 
 # ===================== Deploy =====================
 echo "=== Docker Deploy ==="
@@ -40,24 +43,24 @@ else
   exit 1
 fi
 
-# 3. Stop old container
-echo "[2/5] Stopping old container..."
-if "$DOCKER_COMPOSE"; then
-  cd "$REMOTE_DIR"
-  docker-compose down 2>/dev/null || true
-else
-  docker stop "$CONTAINER_NAME" 2>/dev/null || true
-  docker rm "$CONTAINER_NAME" 2>/dev/null || true
-fi
-echo "  Done"
-
-# 4. Build & run (--progress=plain for real-time output)
-echo "[3/5] Building image..."
+# 3. Build before stopping the running release.
+echo "[2/5] Building image..."
 cd "$REMOTE_DIR"
 if "$DOCKER_COMPOSE"; then
   docker-compose build --no-cache
 else
   docker build --progress=plain -t "$IMAGE_NAME" .
+fi
+
+# 4. Replace only after a successful build. No automatic rollback.
+echo "[3/5] Stopping old container..."
+if "$DOCKER_COMPOSE"; then
+  docker-compose down
+else
+  if docker container inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+    docker stop "$CONTAINER_NAME"
+    docker rm "$CONTAINER_NAME"
+  fi
 fi
 
 echo "[4/5] Starting container..."
@@ -74,34 +77,37 @@ echo "  Done"
 
 # 5. Health check
 echo "[5/5] Health check..."
-sleep 5
-
-if "$DOCKER_COMPOSE"; then
-  # Check all containers in compose
-  if docker-compose ps | grep -q "Up"; then
-    echo "  ✅ Containers running"
-    docker-compose ps
-  else
-    echo "  ❌ Container failed"
-    docker-compose logs --tail=20
-    exit 1
-  fi
-else
-  if docker ps --filter "name=$CONTAINER_NAME" --filter "status=running" | grep -q "$CONTAINER_NAME"; then
-    echo "  ✅ Container running"
-    docker ps --filter "name=$CONTAINER_NAME"
-    
-    # Optional: HTTP health check
-    if curl -sf "http://localhost:$PORT/" >/dev/null 2>&1; then
-      echo "  ✅ HTTP check passed"
+healthy=false
+for ((attempt=1; attempt<=HEALTH_ATTEMPTS; attempt++)); do
+  running=true
+  if "$DOCKER_COMPOSE"; then
+    containers=$(docker-compose ps -q)
+    if [ -z "$containers" ]; then
+      running=false
     else
-      echo "  ⚠️  HTTP check failed (may need more time)"
+      for id in $containers; do
+        if [ "$(docker inspect --format '{{.State.Running}}' "$id")" != true ]; then
+          running=false
+        fi
+      done
     fi
-  else
-    echo "  ❌ Container failed"
-    docker logs "$CONTAINER_NAME" --tail 20
-    exit 1
+  elif [ "$(docker inspect --format '{{.State.Running}}' "$CONTAINER_NAME")" != true ]; then
+    running=false
   fi
+  if "$running" && curl --connect-timeout 3 --max-time 5 -fsS "$HEALTH_URL" >/dev/null 2>&1; then
+    healthy=true
+    break
+  fi
+  sleep "$HEALTH_INTERVAL"
+done
+if ! "$healthy"; then
+  echo "Error: container/service or HTTP health check failed: $HEALTH_URL" >&2
+  if "$DOCKER_COMPOSE"; then
+    docker-compose logs --tail=20 || true
+  else
+    docker logs "$CONTAINER_NAME" --tail 20 || true
+  fi
+  exit 1
 fi
 
 echo "=== Deploy Complete ==="
