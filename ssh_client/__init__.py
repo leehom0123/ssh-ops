@@ -10,6 +10,9 @@ Modules:
     jobs        background-job state machine (JobStore, JobsMixin)
     pool        ConnectionPool and local server YAML management
 """
+import sys as _sys
+from types import ModuleType as _ModuleType
+
 from . import config
 from .config import (
     SSHOperationError,
@@ -26,19 +29,36 @@ from .jobs import JobStore
 from .pool import ConnectionPool, pool
 
 # The old single module exposed these as plain attributes, and callers
-# (and tests) may rebind them at runtime, so they are resolved lazily
-# against the config module instead of snapshotted here.
+# may rebind them at runtime; reads AND writes on the package are
+# forwarded to the config module so there is one source of truth (the
+# old flat module had exactly one binding per name).
 _CONFIG_ATTRS = frozenset((
     "SCRIPT_DIR", "CONFIG_PATH", "KNOWN_HOSTS_PATH", "HOST_KEY_MODES",
     "SERVERS_DIR", "CMD_TEMPLATES", "global_config",
 ))
 
+__all__ = [
+    "SSHConnection", "ConnectionPool", "pool", "JobStore", "config",
+    "SSHOperationError", "load_yaml", "load_global_config",
+    "unmangle_msys_argv",
+] + sorted(_CONFIG_ATTRS)
 
-def __getattr__(name):
-    if name in _CONFIG_ATTRS:
-        return getattr(config, name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+class _CompatModule(_ModuleType):
+    def __getattr__(self, name):
+        if name in _CONFIG_ATTRS:
+            return getattr(config, name)
+        raise AttributeError(
+            f"module {self.__name__!r} has no attribute {name!r}")
+
+    def __setattr__(self, name, value):
+        if name in _CONFIG_ATTRS:
+            setattr(config, name, value)
+        else:
+            super().__setattr__(name, value)
+
+    def __dir__(self):
+        return sorted(set(self.__dict__) | _CONFIG_ATTRS)
 
 
-def __dir__():
-    return sorted(set(globals()) | _CONFIG_ATTRS)
+_sys.modules[__name__].__class__ = _CompatModule

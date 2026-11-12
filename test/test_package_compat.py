@@ -33,6 +33,27 @@ def test_rebindable_config_names_resolve_live(monkeypatch):
     assert getattr(ssh_client, "SERVERS_DIR") == probe
 
 
+def test_star_import_covers_old_surface():
+    ns = {}
+    exec("from ssh_client import *", ns)
+    missing = [name for name in OLD_PUBLIC_NAMES if name not in ns]
+    assert not missing, f"missing from star import: {missing}"
+
+
+def test_rebinding_on_old_path_updates_config_single_source():
+    # Old flat-module users could rebind ssh_client.SERVERS_DIR; the
+    # package must forward the write so the config module (the single
+    # source of truth the pool reads) sees the new value too.
+    probe = Path("/tmp/servers-probe2")
+    orig = ssh_client.config.SERVERS_DIR
+    try:
+        ssh_client.SERVERS_DIR = probe
+        assert ssh_client.config.SERVERS_DIR == probe
+        assert ssh_client.SERVERS_DIR == probe
+    finally:
+        ssh_client.config.SERVERS_DIR = orig
+
+
 def test_unknown_attribute_raises():
     with pytest.raises(AttributeError):
         ssh_client.not_a_real_symbol
