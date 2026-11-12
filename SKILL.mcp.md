@@ -1,16 +1,16 @@
 ﻿---
-name: ssh-alias-mcp
+name: ssh-ops
 description: >
   AI-driven server operations via SSH. Run commands, deploy scripts, restart services,
   check logs, upload/download files, read/write remote text files, run background
   jobs, and manage aliases across Linux and Windows servers.
   Supports bash, cmd, and powershell shells. Use when managing servers, deploying code,
   checking logs, restarting services, uploading scripts, or running SSH commands.
-  Trigger keywords: deploy, restart, check logs, server health, SSH, run on server,
-  upload script, download file, server alias, background job, long task, 部署, 重启, 查看日志, 服务器健康检查, 后台任务.
+  Trigger keywords: deploy, release, restart, check logs, server health, SSH, run on server,
+  upload script, download file, server alias, background job, long task, 部署, 上线, 发布, 重启, 查看日志, 服务器健康检查, 后台任务.
 ---
 
-# ssh-alias-mcp
+# ssh-ops
 
 ## Quick Start
 
@@ -78,4 +78,5 @@ Set `shell` in server YAML to auto-adapt commands:
 
 - Server config, aliases, security, file transfer → [REFERENCE.md](REFERENCE.md)
 - CLI commands reference → [CLI_USAGE.md](CLI_USAGE.md)
+- Scripted deploy pipeline (runs via CLI) → [deploy/README.md](deploy/README.md)
 - AI Agent installation guide → [INSTALL.md](INSTALL.md)

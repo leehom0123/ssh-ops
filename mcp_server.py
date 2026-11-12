@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MCP Server - ssh-alias-mcp
+"""MCP Server - ssh-ops
 
 MCP stdio protocol wrapper around ssh_client.py.
 """
@@ -27,7 +27,7 @@ from ssh_client import pool
 
 
 SERVER_INFO = {
-    "name": "ssh-alias-mcp",
+    "name": "ssh-ops",
     "title": "SSH Alias MCP",
     "version": "1.0.0",
     "description": "Run configured SSH commands, scripts, aliases, uploads, and downloads.",
@@ -1055,7 +1055,7 @@ def _make_http_handler(sessions: _HttpSessions, endpoint: str, token):
 
     class McpHttpHandler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
-        server_version = "ssh-alias-mcp/1.0"
+        server_version = "ssh-ops/1.0"
 
         def log_message(self, fmt, *args):
             print(f"[http] {self.address_string()} {fmt % args}",
@@ -1153,7 +1153,7 @@ def _serve_http(host: str, port: int, path: str, token: str = None):
     sessions = _HttpSessions()
     httpd = ThreadingHTTPServer((host, port),
                                 _make_http_handler(sessions, path, token))
-    print(f"ssh-alias-mcp listening on http://{host}:{port}{path}",
+    print(f"ssh-ops listening on http://{host}:{port}{path}",
           file=sys.stderr)
     httpd.serve_forever()
 
@@ -1175,7 +1175,7 @@ def _parse_launch_args(argv):
     import argparse
     parser = argparse.ArgumentParser(
         prog="mcp_server.py",
-        description="ssh-alias-mcp MCP server (stdio by default).",
+        description="ssh-ops MCP server (stdio by default).",
         epilog=HTTP_HELP)
     parser.add_argument("--http", action="store_true",
                         help="serve Streamable HTTP instead of stdio")

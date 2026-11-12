@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for the ssh-alias-mcp test suite.
+"""Shared pytest fixtures for the ssh-ops test suite.
 
 Offline unit tests must never require a live SSH server. Live end-to-end
 tests are gated behind the SSH_TEST_SERVER environment variable and skip

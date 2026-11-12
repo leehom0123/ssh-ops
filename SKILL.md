@@ -1,12 +1,12 @@
 ---
-name: ssh-alias-mcp
+name: ssh-ops
 description: >
-  SSH server management CLI. Run remote commands, deploy scripts, restart services,  check logs, upload/download files, and manage aliases across Linux (bash) and Windows  (cmd/powershell) servers. Use when managing servers, deploying code, checking logs,  restarting services, uploading scripts, or running SSH commands. 
-  Trigger keywords:  deploy, restart, check logs, server health, SSH, run on server, upload script,
-  download file, server alias, 部署, 重启, 查看日志, 服务器健康检查.
+  SSH server management CLI. Run remote commands, deploy scripts, restart services,  check logs, upload/download files, read/write remote text files, run background jobs, and manage aliases across Linux (bash) and Windows  (cmd/powershell) servers. Includes a scripted deployment workflow  (package -> upload -> server script -> health check) under deploy/.  Use when managing servers, deploying code, checking logs,  restarting services, uploading scripts, or running SSH commands. 
+  Trigger keywords:  deploy, release, ship, server health, SSH, run on server, upload script,
+  download file, server alias, 部署, 上线, 发布, 重启, 查看日志, 服务器健康检查.
 ---
 
-# ssh-alias-mcp CLI
+# ssh-ops CLI
 
 ## Quick Start
 
@@ -66,6 +66,17 @@ python cli.py <server> list-aliases                          # List aliases (no 
 Flags are parsed from the tail of the arguments only, so flags inside the
 command text (e.g. `run "grep -s foo"`) are preserved.
 
+## Deploy (scripted pipeline)
+
+Full workflow lives in [deploy/README.md](deploy/README.md): collect target
+server/mode/port first, generate `{project}-deploy-local.sh` +
+`{project}-deploy-server.sh` from the templates in `deploy/scripts/`
+(direct / compile / docker / static), then the local script packages a
+tarball, uploads package + server script via `upload-file`, runs
+`run-script`, and verifies with a health check. All server IO goes through
+this CLI (sudo, proxy fallback, allow-lists apply). Mainland-CN servers need
+pip/npm/Docker mirrors in the server script — see deploy/REFERENCE.md.
+
 ## Notes
 
 - **sudo** — Use `-s` flag, never inline `sudo -S` in commands (password is sent via stdin automatically)
@@ -81,4 +92,5 @@ command text (e.g. `run "grep -s foo"`) are preserved.
 
 - Server config, aliases, security, file transfer → [REFERENCE.md](REFERENCE.md)
 - Full CLI reference → [CLI_USAGE.md](CLI_USAGE.md)
+- Scripted deploy pipeline → [deploy/README.md](deploy/README.md)
 - AI Agent installation guide → [INSTALL.md](INSTALL.md)

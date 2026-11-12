@@ -1,4 +1,4 @@
-﻿# ssh-alias-mcp
+﻿# ssh-ops
 
 [English](README.md) | [中文](README.zh-CN.md) &nbsp;·&nbsp; [SKILL](SKILL.md) &nbsp;·&nbsp; [REFERENCE](REFERENCE.md) &nbsp;·&nbsp; [CLI](CLI_USAGE.md) &nbsp;·&nbsp; [INSTALL](INSTALL.md)
 
@@ -12,12 +12,13 @@ AI-driven server operations tool. Configure servers in YAML, execute commands, d
 - **Secure by default** — Host key verification before auth, shell-quoted command arguments, sudo passwords via stdin (never in argv)
 - **Long jobs, big logs** — Background jobs and byte-paged remote text I/O keep long operations off the MCP channel
 - **stdio or HTTP** — Same server over stdio (default) or a Streamable HTTP endpoint (`--http`, optional bearer token)
+- **Scripted deploys** — Package → upload → server script → health check, with direct/compile/docker/static templates under [deploy/](deploy/README.md)
 
 ## Quick Start
 
 ```bash
 # AI Agent (MCP)
-claude mcp add ssh-alias-mcp python <path>/mcp_server.py
+claude mcp add ssh-ops python <path>/mcp_server.py
 
 # CLI
 python cli.py my-server run "uptime"
@@ -29,11 +30,12 @@ python cli.py my-server alias deploy
 - [SKILL.md](SKILL.md) — AI Agent skill definition (MCP tools, quick reference)
 - [REFERENCE.md](REFERENCE.md) — Server configuration, aliases, security, file transfer
 - [CLI_USAGE.md](CLI_USAGE.md) — CLI commands reference
+- [deploy/](deploy/README.md) — Scripted deployment workflow and server script templates
 - [INSTALL.md](INSTALL.md) — AI Agent installation guide
 
 ## Agent Setup in One Sentence (Copy It To Your Agents)
 
-Read https://github.com/leehom0123/ssh-alias-mcp/blob/main/INSTALL.md — set up the SKILL and install the MCP service as described.
+Read https://github.com/leehom0123/ssh-ops/blob/main/INSTALL.md — set up the SKILL and install the MCP service as described.
 
 ## Real-World Scenarios
 
@@ -89,4 +91,4 @@ server:
 
 ## Links
 
-- [GitHub](https://github.com/leehom0123/ssh-alias-mcp)
+- [GitHub](https://github.com/leehom0123/ssh-ops)

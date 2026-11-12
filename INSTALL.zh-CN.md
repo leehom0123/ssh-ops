@@ -8,17 +8,17 @@
 
 **Claude Code：**
 ```bash
-git clone https://github.com/leehom0123/ssh-alias-mcp.git ~/.claude/skills/ssh-alias-mcp
+git clone https://github.com/leehom0123/ssh-ops.git ~/.claude/skills/ssh-ops
 ```
 
 **Codex CLI：**
 ```bash
-git clone https://github.com/leehom0123/ssh-alias-mcp.git ~/.codex/skills/ssh-alias-mcp
+git clone https://github.com/leehom0123/ssh-ops.git ~/.codex/skills/ssh-ops
 ```
 
 **OpenCode：**
 ```bash
-git clone https://github.com/leehom0123/ssh-alias-mcp.git ~/.opencode/skills/ssh-alias-mcp
+git clone https://github.com/leehom0123/ssh-ops.git ~/.opencode/skills/ssh-ops
 ```
 
 要求：Python ≥ 3.9
@@ -26,7 +26,7 @@ git clone https://github.com/leehom0123/ssh-alias-mcp.git ~/.opencode/skills/ssh
 ## 2. 安装依赖
 
 ```bash
-pip install -r <skills-dir>/ssh-alias-mcp/requirements.txt
+pip install -r <skills-dir>/ssh-ops/requirements.txt
 ```
 
 仅三个依赖：`paramiko`、`pyyaml`、`pysocks`。无其他要求。
@@ -39,9 +39,9 @@ pip install -r <skills-dir>/ssh-alias-mcp/requirements.txt
 ```json
 {
   "mcpServers": {
-    "ssh-alias-mcp": {
+    "ssh-ops": {
       "command": "python",
-      "args": ["<skills-dir>/ssh-alias-mcp/mcp_server.py"]
+      "args": ["<skills-dir>/ssh-ops/mcp_server.py"]
     }
   }
 }
@@ -51,9 +51,9 @@ pip install -r <skills-dir>/ssh-alias-mcp/requirements.txt
 ```json
 {
   "mcpServers": {
-    "ssh-alias-mcp": {
+    "ssh-ops": {
       "command": "python",
-      "args": ["<skills-dir>/ssh-alias-mcp/mcp_server.py"]
+      "args": ["<skills-dir>/ssh-ops/mcp_server.py"]
     }
   }
 }
@@ -79,7 +79,7 @@ python mcp_server.py --http --host 127.0.0.1 --port 8802 --token SECRET
 
 ```bash
 # 使用 CLI 验证配置是否正常（非必需，但建议执行）
-python <skills-dir>/ssh-alias-mcp/cli.py list-servers
+python <skills-dir>/ssh-ops/cli.py list-servers
 ```
 
 如果 `servers/` 目录已有 `.yml` 配置，CLI 会列出服务器信息。没有服务器配置文件也会正常运行，仅返回空列表。

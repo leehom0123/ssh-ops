@@ -8,17 +8,17 @@ Clone directly into your agent's skills directory:
 
 **Claude Code:**
 ```bash
-git clone https://github.com/leehom0123/ssh-alias-mcp.git ~/.claude/skills/ssh-alias-mcp
+git clone https://github.com/leehom0123/ssh-ops.git ~/.claude/skills/ssh-ops
 ```
 
 **Codex CLI:**
 ```bash
-git clone https://github.com/leehom0123/ssh-alias-mcp.git ~/.codex/skills/ssh-alias-mcp
+git clone https://github.com/leehom0123/ssh-ops.git ~/.codex/skills/ssh-ops
 ```
 
 **OpenCode:**
 ```bash
-git clone https://github.com/leehom0123/ssh-alias-mcp.git ~/.opencode/skills/ssh-alias-mcp
+git clone https://github.com/leehom0123/ssh-ops.git ~/.opencode/skills/ssh-ops
 ```
 
 Requires: Python ≥ 3.9
@@ -26,7 +26,7 @@ Requires: Python ≥ 3.9
 ## 2. Install Dependencies
 
 ```bash
-pip install -r <skills-dir>/ssh-alias-mcp/requirements.txt
+pip install -r <skills-dir>/ssh-ops/requirements.txt
 ```
 
 Only three dependencies: `paramiko`, `pyyaml`, `pysocks`. Nothing else.
@@ -39,9 +39,9 @@ Add the following entry to your agent's MCP configuration:
 ```json
 {
   "mcpServers": {
-    "ssh-alias-mcp": {
+    "ssh-ops": {
       "command": "python",
-      "args": ["<skills-dir>/ssh-alias-mcp/mcp_server.py"]
+      "args": ["<skills-dir>/ssh-ops/mcp_server.py"]
     }
   }
 }
@@ -51,9 +51,9 @@ Add the following entry to your agent's MCP configuration:
 ```json
 {
   "mcpServers": {
-    "ssh-alias-mcp": {
+    "ssh-ops": {
       "command": "python",
-      "args": ["<skills-dir>/ssh-alias-mcp/mcp_server.py"]
+      "args": ["<skills-dir>/ssh-ops/mcp_server.py"]
     }
   }
 }
@@ -81,7 +81,7 @@ After restarting your AI agent, confirm the MCP tools are loaded:
 
 ```bash
 # Quick CLI check (optional but recommended)
-python <skills-dir>/ssh-alias-mcp/cli.py list-servers
+python <skills-dir>/ssh-ops/cli.py list-servers
 ```
 
 If `servers/` already contains `.yml` configs, the CLI will list them. An empty list is fine too.
