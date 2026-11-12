@@ -1,18 +1,18 @@
 # 运行与配置参考
 
-[English](reference.md) · [CLI 语法](cli.zh-CN.md) · [MCP 工具](../SKILL.mcp.md)
+[English](../../docs/reference.md) · [CLI 语法](cli.md) · [MCP 工具](../SKILL.mcp.md)
 
-本文统一说明配置和运行行为。部署专用约定见[部署专章](deploy.zh-CN.md)。
+本文统一说明配置和运行行为。部署专用约定见[部署专章](deploy.md)。
 
 ## 实现结构
 
-[cli.py](../cli.py) 与 [mcp_server.py](../mcp_server.py) 均调用 [ssh_client/](../ssh_client/) 包：
+[cli.py](../../cli.py) 与 [mcp_server.py](../../mcp_server.py) 均调用 [ssh_client/](../../ssh_client/) 包：
 
-- [config.py](../ssh_client/config.py)：本地路径、YAML、shell 模板、编码辅助。
-- [connection.py](../ssh_client/connection.py)：SSH 生命周期、主机密钥、命令执行、别名。
-- [transfer.py](../ssh_client/transfer.py)：SFTP、脚本封装、文本读写。
-- [jobs.py](../ssh_client/jobs.py)：`JobStore` 与远端标记文件协议。
-- [pool.py](../ssh_client/pool.py)：进程内连接缓存与服务器 YAML 增删改查。
+- [config.py](../../ssh_client/config.py)：本地路径、YAML、shell 模板、编码辅助。
+- [connection.py](../../ssh_client/connection.py)：SSH 生命周期、主机密钥、命令执行、别名。
+- [transfer.py](../../ssh_client/transfer.py)：SFTP、脚本封装、文本读写。
+- [jobs.py](../../ssh_client/jobs.py)：`JobStore` 与远端标记文件协议。
+- [pool.py](../../ssh_client/pool.py)：进程内连接缓存与服务器 YAML 增删改查。
 
 <a id="configuration"></a>
 ## 配置
@@ -163,7 +163,7 @@ CRUD 更新与继承不同：映射递归合并，数组和标量整项替换；
 
 ### 超时与 sudo
 
-CLI 选项默认值见 [CLI 参考](cli.zh-CN.md)，MCP 参数默认值见 [SKILL.mcp.md](../SKILL.mcp.md)。对具有正数 `timeout` 参数 `t` 的 MCP 直通工具，实际转发值为：
+CLI 选项默认值见 [CLI 参考](cli.md)，MCP 参数默认值见 [SKILL.mcp.md](../SKILL.mcp.md)。对具有正数 `timeout` 参数 `t` 的 MCP 直通工具，实际转发值为：
 
 ```text
 max(1, t - min(5, t * 0.1))

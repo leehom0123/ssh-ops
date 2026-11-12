@@ -1,6 +1,6 @@
 # CLI reference
 
-[中文](cli.zh-CN.md) · [CLI skill](../SKILL.md) · [Runtime semantics](reference.md)
+[中文](../zh-CN/docs/cli.md) · [CLI skill](../SKILL.md) · [Runtime semantics](reference.md)
 
 Run commands from the checkout, or replace `cli.py` with its absolute path. `python cli.py`, `-h`, and `--help` show help. The CLI uses a custom trailing-option parser, not argparse.
 

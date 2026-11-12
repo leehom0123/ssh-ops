@@ -1,6 +1,6 @@
 # ssh-ops
 
-[中文](README.zh-CN.md)
+[中文](zh-CN/README.md)
 
 SSH operations through a CLI or MCP server, using YAML server configurations and reusable command aliases.
 
@@ -42,7 +42,7 @@ For an agent, follow the [installation guide](docs/install.md) to load the CLI s
 
 | Document | Purpose |
 |---|---|
-| [SKILL.md](SKILL.md) | CLI agent entry point and command quick reference |
+| [CLI skill](SKILL.md) | Agent workflow and command quick reference |
 | [SKILL.mcp.md](SKILL.mcp.md) | MCP registration, 22 static tools, and dynamic alias tools |
 | [CLI reference](docs/cli.md) | Exact CLI syntax, options, defaults, and output |
 | [Runtime reference](docs/reference.md) | YAML fields, security, transfer/job semantics, and HTTP protocol |

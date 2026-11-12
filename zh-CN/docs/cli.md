@@ -1,6 +1,6 @@
 # CLI 使用参考
 
-[English](cli.md) · [CLI 技能入口](../SKILL.md) · [运行语义](reference.zh-CN.md)
+[English](../../docs/cli.md) · [CLI 技能入口](../SKILL.md) · [运行语义](reference.md)
 
 在仓库目录执行命令，或把 `cli.py` 换成绝对路径。`python cli.py`、`-h`、`--help` 显示帮助。CLI 使用自定义的尾部选项解析器，不使用 argparse。
 
@@ -41,7 +41,7 @@ python cli.py <server> <command> <positional-arguments> [options]
 | `python cli.py copy-server <source> <new-name>` | 复制 YAML 原始内容与权限位；目标已存在时报错 |
 | `python cli.py delete-server <name>` | 删除本地 YAML，不删除远端内容 |
 
-修改命令输出 JSON。名称规则、存储、继承和缓存失效机制见[配置参考](reference.zh-CN.md#configuration)。
+修改命令输出 JSON。名称规则、存储、继承和缓存失效机制见[配置参考](reference.md#configuration)。
 
 ## 命令执行与脚本
 
@@ -75,7 +75,7 @@ EOF
 | `read-file <remote> [-o BYTES] [-l BYTES] [-s]` | stdout 输出文本；未读完时 stderr 提示下一个字节偏移 |
 | `write-file <remote> [-a] [-s]` | 从标准输入读取 UTF-8 文本，输出操作结果 |
 
-传输默认覆盖。读取上限、UTF-8 边界限制、文件权限、sudo 暂存和去重语义统一见[运行参考](reference.zh-CN.md#transfers)。
+传输默认覆盖。读取上限、UTF-8 边界限制、文件权限、sudo 暂存和去重语义统一见[运行参考](reference.md#transfers)。
 
 ```bash
 python cli.py my-server read-file /var/log/app.log -o 0 -l 4096
@@ -91,11 +91,11 @@ python cli.py my-server write-file /etc/motd -s < note.txt
 | `job-kill <id>` | JSON 终止结果，读取已保存的任务元数据 |
 | `job-list [--clean-days N] [-s]` | JSON `count`、`jobs`；清理会删除远端任务目录 |
 
-这些命令要求 bash 服务器。见[任务协议与限制](reference.zh-CN.md#jobs)。
+这些命令要求 bash 服务器。见[任务协议与限制](reference.md#jobs)。
 
 ## 输出、错误与本地路径
 
 - 执行和传输命令通常返回操作的退出码。已知操作错误在 stderr 输出 `Error: ...` 并以 1 退出；非法 timeout 值和不合法的标准输入命令以 2 退出。
 - 列表、文本读取和正常返回的任务处理逻辑，不会把远端命令退出码直接变成 CLI 退出码。应检查任务 JSON 和健康检查结果，不能只看本地退出状态。
 - 本地上传、下载和配置文件路径使用项目的 Windows/WSL 路径转换。在 Windows Git Bash 下，CLI 会尝试用 `cygpath` 撤销 MSYS 路径重写；真实 Windows 目标路径若以 Git 或临时目录前缀开头，可改用 PowerShell/cmd 避免歧义。
-- 部署请按[部署专章](deploy.zh-CN.md)执行，不要从本参考中临时拼凑流程。
+- 部署请按[部署专章](deploy.md)执行，不要从本参考中临时拼凑流程。

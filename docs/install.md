@@ -1,6 +1,6 @@
 # Agent installation
 
-[中文](install.zh-CN.md) · [Home](../README.md)
+[中文](../zh-CN/docs/install.md) · [Home](../README.md)
 
 ## 1. Prepare a checkout and interpreter
 
@@ -16,8 +16,8 @@ Use `.venv/bin/python` on POSIX, or `.venv/Scripts/python.exe` on Windows, to ru
 
 ## 2. Choose the agent entry point
 
-- **CLI skill:** put the checkout in a skill directory supported by your agent, or configure that directory in the agent. Load [SKILL.md](../SKILL.md) together with its relative documentation and scripts. Do not copy that file alone. Skill directory conventions depend on the client/version; this project does not install a global `ssh-ops` command.
-- **MCP:** keep the checkout wherever suitable, register [mcp_server.py](../mcp_server.py), and use [SKILL.mcp.md](../SKILL.mcp.md) as the operating guide. Do not load both skill files as two skills with the same `name`.
+- **CLI skill:** put the checkout in a skill directory supported by your agent, or configure that directory in the agent. Load the root English [SKILL.md](../SKILL.md) by default. The `zh-CN/` tree contains same-named Chinese reference documents, not a separately installed skill. Keep the complete directory structure; do not copy the skill file alone. Skill directory conventions depend on the client/version; this project does not install a global `ssh-ops` command.
+- **MCP:** keep the checkout wherever suitable, register [mcp_server.py](../mcp_server.py), and use the root English [SKILL.mcp.md](../SKILL.mcp.md) as the operating guide, consulting the [Chinese reference](../zh-CN/SKILL.mcp.md) when needed. The CLI skill, MCP skill, and language copies share a `name`; do not load them as multiple skills.
 
 The MCP entry point contains registration commands for stdio and HTTP. For clients using the common `mcpServers` JSON format, the equivalent stdio entry is:
 
