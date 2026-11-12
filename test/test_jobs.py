@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Offline unit tests for the background-job layer in ssh_client.py.
+"""Interface tests for the background-job state machine (ssh_client.jobs).
 
-The remote side of a job is a directory of marker files (cmd, meta,
-wrapper.sh, pid, exit, killed, out.log, err.log); these tests pin down
-the files the wrapper writes, the state parsing, and the kill sequence.
+JobStore is the deep module: these tests drive its small interface against
+a scripted runner double (no real SSH), pinning the remote marker protocol
+the wrapper writes, the state parsing, and the kill sequence.
 Live lifecycle tests are `live`-marked (SSH_TEST_SERVER gated).
 """
 import json
@@ -13,6 +13,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from ssh_client import SSHConnection
+from ssh_client.jobs import JobStore
 
 
 def _conn(cfg=None, **attrs):
@@ -69,11 +70,11 @@ def test_job_start_requires_sudo_password_when_sudo():
 
 
 def test_job_id_validation_rejects_traversal():
-    conn = _conn()
+    store = JobStore(_conn())
     for bad in ("../../etc", "job-", "notajob-1", "job-a b", 42):
         with pytest.raises(ValueError, match="Invalid job id"):
-            conn._job_dir(bad)
-    assert conn._job_dir("job-20261113-101500-abcd12") == \
+            store._job_dir(bad)
+    assert store._job_dir("job-20261113-101500-abcd12") == \
         "/opt/scripts/.jobs/job-20261113-101500-abcd12"
 
 
@@ -151,7 +152,7 @@ def test_job_shell_state_parsing(stdout, expected):
     conn = _conn()
     conn.run = MagicMock(return_value={"stdout": stdout, "stderr": "",
                                        "code": 0})
-    got = conn._job_shell_state("/j", "job-x", sudo=False)
+    got = JobStore(conn)._state("/j", "job-x", sudo=False)
     assert got == expected
     cmd = conn.run.call_args.args[0]
     # A live pid must still name the job, otherwise a recycled pid would
@@ -164,7 +165,7 @@ def test_job_status_reads_meta_then_logs_with_job_privilege():
     meta = {"id": "job-a", "name": "n", "sudo": True, "started": "t",
             "timeout": 0, "workdir": "", "command": "id -u"}
     conn.run = _Runner({"meta": json.dumps(meta), "tail -n": "0\n"})
-    with patch.object(SSHConnection, "_job_shell_state",
+    with patch.object(JobStore, "_state",
                       return_value={"state": "exited", "exit_code": "0",
                                     "pid": "1"}) as state:
         got = conn.job_status("job-a", tail_lines=5)
@@ -187,14 +188,14 @@ def test_job_kill_only_signals_running_jobs():
                        "command": ""})
     conn = _conn()
     conn.run = _Runner({"meta": meta})
-    with patch.object(SSHConnection, "_job_shell_state",
+    with patch.object(JobStore, "_state",
                       return_value={"state": "exited", "exit_code": "0",
                                     "pid": "5"}):
         not_running = conn.job_kill("job-a")
         assert not_running["killed"] is False
     conn2 = _conn()
     conn2.run = _Runner({"meta": meta})
-    with patch.object(SSHConnection, "_job_shell_state",
+    with patch.object(JobStore, "_state",
                       side_effect=[{"state": "running", "exit_code": "",
                                     "pid": "4242"},
                                    {"state": "killed", "exit_code": "",

@@ -325,102 +325,107 @@ def _ok_result():
     return {"stdout": "ok\n", "stderr": "", "code": 0}
 
 
-def test_handle_ssh_run_maps_args():
+def _tool(name):
+    """The registered handler for a tool name (what handle_tools_call calls)."""
+    return STATIC_TOOLS[name].handler
+
+
+def test_ssh_run_tool_maps_args():
     conn = MagicMock()
     conn.run.return_value = _ok_result()
     args = {"server": "demo", "command": "whoami", "timeout": 60, "sudo": False}
     with patch("mcp_server._server_conn", return_value=conn):
-        result = mcp_server._handle_ssh_run(args)
+        result = _tool("ssh_run")(args)
     conn.run.assert_called_once_with(
-        "whoami", timeout=mcp_server._mcp_safe_timeout(60), sudo=False)
+        "whoami", mcp_server._mcp_safe_timeout(60), False)
     text = _text(result)
     assert text.startswith("Tool: ssh_run\nServer: demo\nCommand: whoami\nTimeout:")
     assert text.endswith("Sudo: False\n\nok")
 
 
-def test_handle_ssh_run_zero_timeout_passes_through():
+def test_ssh_run_tool_zero_timeout_passes_through():
     conn = MagicMock()
     conn.run.return_value = _ok_result()
     args = {"server": "demo", "command": "uptime", "timeout": 0, "sudo": False}
     with patch("mcp_server._server_conn", return_value=conn):
-        mcp_server._handle_ssh_run(args)
-    conn.run.assert_called_once_with("uptime", timeout=0, sudo=False)
+        _tool("ssh_run")(args)
+    conn.run.assert_called_once_with("uptime", 0, False)
 
 
-def test_handle_ssh_run_script_maps_args():
+def test_ssh_run_script_tool_maps_args():
     conn = MagicMock()
     conn.run_script.return_value = _ok_result()
     args = {"server": "demo", "script_name": "deploy.sh", "timeout": 120, "sudo": True}
     with patch("mcp_server._server_conn", return_value=conn):
-        result = mcp_server._handle_ssh_run_script(args)
+        result = _tool("ssh_run_script")(args)
     conn.run_script.assert_called_once_with(
-        "deploy.sh", timeout=mcp_server._mcp_safe_timeout(120), sudo=True)
+        "deploy.sh", mcp_server._mcp_safe_timeout(120), True)
     assert _text(result).startswith("Tool: ssh_run_script\nServer: demo\nScript: deploy.sh\n")
 
 
-def test_handle_ssh_upload_script_maps_positional_args():
+def test_ssh_upload_script_tool_maps_positional_args():
     conn = MagicMock()
     conn.upload_script.return_value = _ok_result()
     args = {"server": "demo", "local_path": "./deploy.sh", "script_name": "deploy.sh",
             "run_immediately": True, "timeout": 90, "overwrite": False, "sudo": True}
     with patch("mcp_server._server_conn", return_value=conn):
-        mcp_server._handle_ssh_upload_script(args)
+        _tool("ssh_upload_script")(args)
     conn.upload_script.assert_called_once_with(
         "./deploy.sh", "deploy.sh", True,
         mcp_server._mcp_safe_timeout(90), False, True)
 
 
-def test_handle_ssh_upload_file_maps_positional_args():
+def test_ssh_upload_file_tool_maps_positional_args():
     conn = MagicMock()
     conn.upload_file.return_value = _ok_result()
     args = {"server": "demo", "local_path": "./app.json", "remote_path": "/srv/app.json",
             "timeout": 45, "overwrite": False, "sudo": True, "executable": True}
     with patch("mcp_server._server_conn", return_value=conn):
-        mcp_server._handle_ssh_upload_file(args)
+        _tool("ssh_upload_file")(args)
     conn.upload_file.assert_called_once_with(
         "./app.json", "/srv/app.json",
         mcp_server._mcp_safe_timeout(45), False, True, True)
 
 
-def test_handle_ssh_download_maps_args():
+def test_ssh_download_tool_maps_args():
     conn = MagicMock()
     conn.download.return_value = _ok_result()
     args = {"server": "demo", "remote_path": "/var/log/app.log", "local_path": "./app.log",
             "pattern": r"\.log$", "timeout": 30, "overwrite": False, "sudo": True}
     with patch("mcp_server._server_conn", return_value=conn):
-        mcp_server._handle_ssh_download(args)
+        result = _tool("ssh_download")(args)
     conn.download.assert_called_once_with(
         "/var/log/app.log", "./app.log",
-        timeout=mcp_server._mcp_safe_timeout(30), pattern=r"\.log$",
-        overwrite=False, sudo=True)
+        mcp_server._mcp_safe_timeout(30), r"\.log$", False, True)
+    assert r"Pattern: \.log$" in _text(result)
 
 
-def test_handle_ssh_download_script_maps_positional_args():
+def test_ssh_download_script_tool_maps_positional_args():
     conn = MagicMock()
     conn.download_script.return_value = _ok_result()
     args = {"server": "demo", "script_name": "fix.sh", "local_path": "./fix.sh",
             "timeout": 15, "overwrite": True, "sudo": False}
     with patch("mcp_server._server_conn", return_value=conn):
-        mcp_server._handle_ssh_download_script(args)
+        _tool("ssh_download_script")(args)
     conn.download_script.assert_called_once_with(
         "fix.sh", "./fix.sh", mcp_server._mcp_safe_timeout(15), True, False)
 
 
-def test_handle_ssh_list_scripts_passes_sudo():
+def test_ssh_list_scripts_tool_passes_sudo():
     conn = MagicMock()
     conn.list_scripts.return_value = _ok_result()
     with patch("mcp_server._server_conn", return_value=conn):
-        result = mcp_server._handle_ssh_list_scripts({"server": "demo", "sudo": True})
-    conn.list_scripts.assert_called_once_with(sudo=True)
+        result = _tool("ssh_list_scripts")({"server": "demo", "sudo": True})
+    conn.list_scripts.assert_called_once_with(True)
     assert _text(result).startswith("Tool: ssh_list_scripts\nServer: demo\nSudo: True\n")
 
 
-def test_handle_ssh_upload_all_scripts_passes_sudo():
+def test_ssh_upload_all_scripts_tool_passes_sudo():
     conn = MagicMock()
     conn.upload_all_scripts.return_value = _ok_result()
     with patch("mcp_server._server_conn", return_value=conn):
-        mcp_server._handle_ssh_upload_all_scripts({"server": "demo", "sudo": False})
-    conn.upload_all_scripts.assert_called_once_with(sudo=False)
+        _tool("ssh_upload_all_scripts")({"server": "demo", "sudo": False})
+    conn.upload_all_scripts.assert_called_once_with(False)
 
 
 def test_handle_ssh_run_alias_maps_args_and_summary():
@@ -509,7 +514,7 @@ def test_handle_delete_server_delegates_and_invalidates_alias_cache():
 
 
 # ── Text-IO / job handler argument mapping (mocked connection) ───
-def test_handle_ssh_read_file_maps_args_and_paging_header():
+def test_ssh_read_file_tool_maps_args_and_paging_header():
     conn = MagicMock()
     conn.read_file.return_value = {
         "stdout": "hello", "stderr": "", "code": 0,
@@ -518,16 +523,16 @@ def test_handle_ssh_read_file_maps_args_and_paging_header():
     args = {"server": "demo", "remote_path": "/var/log/app.log",
             "offset": 10, "max_bytes": 5, "sudo": True}
     with patch("mcp_server._server_conn", return_value=conn):
-        result = mcp_server._handle_ssh_read_file(args)
+        result = _tool("ssh_read_file")(args)
     conn.read_file.assert_called_once_with(
-        "/var/log/app.log", offset=10, max_bytes=5, sudo=True)
+        "/var/log/app.log", 10, 5, True)
     text = _text(result)
-    assert text.startswith("Tool: ssh_read_file\nServer: demo\n")
-    assert "Next offset: 15" in text and "EOF: False" in text
+    assert text.startswith("Tool: ssh_read_file\nServer: demo\nRemote path: /var/log/app.log\n")
+    assert "Offset: 10" in text and "Next offset: 15" in text and "EOF: False" in text
     assert text.endswith("hello")
 
 
-def test_handle_ssh_write_file_maps_args():
+def test_ssh_write_file_tool_maps_args():
     conn = MagicMock()
     conn.write_file.return_value = {
         "stdout": "Wrote 5 bytes -> /etc/motd\n", "stderr": "", "code": 0,
@@ -536,10 +541,11 @@ def test_handle_ssh_write_file_maps_args():
     args = {"server": "demo", "remote_path": "/etc/motd", "content": "hello",
             "append": True, "sudo": False}
     with patch("mcp_server._server_conn", return_value=conn):
-        result = mcp_server._handle_ssh_write_file(args)
+        result = _tool("ssh_write_file")(args)
     conn.write_file.assert_called_once_with(
-        "/etc/motd", "hello", append=True, sudo=False)
+        "/etc/motd", "hello", True, False)
     assert "Append: True" in _text(result)
+    assert "Bytes: 5" in _text(result)
 
 
 def test_handle_ssh_job_start_maps_args():

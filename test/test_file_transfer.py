@@ -34,7 +34,7 @@ def test_upload_file_happy_path_uses_sftp(tmp_path):
     local.write_text("{}")
     conn = _conn()
     conn.run = MagicMock(return_value=_ok_result())
-    with patch("ssh_client.paramiko.SFTPClient") as sftp_cls:
+    with patch("paramiko.SFTPClient") as sftp_cls:
         sftp = sftp_cls.from_transport.return_value
         result = conn.upload_file(str(local), "/srv/app/config.json")
     assert result["code"] == 0
@@ -58,7 +58,7 @@ def test_generated_helper_commands_are_internal(tmp_path):
     conn.run = MagicMock(return_value=_ok_result())
     local = tmp_path / "run.sh"
     local.write_text("#!/bin/sh")
-    with patch("ssh_client.paramiko.SFTPClient"):
+    with patch("paramiko.SFTPClient"):
         conn.upload_file(str(local), "/srv/app/run.sh",
                          overwrite=True, sudo=True, executable=True)
     assert conn.run.called, "expected helper run() calls"
