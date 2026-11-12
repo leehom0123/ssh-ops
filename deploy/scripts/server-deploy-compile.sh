@@ -5,7 +5,7 @@
 # For projects that need compilation on server.
 # Upload code.tar.gz to REMOTE_DIR, this script extracts, builds, and deploys.
 #
-# Customize: REMOTE_DIR, BINARY_NAME, BUILD_CMD, SERVICE_NAME
+# Customize: REMOTE_DIR, BINARY_NAME, BUILD_TYPE, SERVICE_NAME
 # =============================================================================
 set -eo pipefail
 
@@ -15,6 +15,8 @@ BINARY_NAME="my-app"
 SERVICE_NAME="my-app"
 # Set to: go | rust | custom
 BUILD_TYPE="go"
+HEALTH_ATTEMPTS=10
+HEALTH_INTERVAL=2
 
 # ===================== Deploy =====================
 echo "=== Compile Deploy ==="
@@ -38,50 +40,55 @@ fi
 # 3. Build
 echo "[2/4] Building..."
 cd "$REMOTE_DIR"
+CANDIDATE=$(mktemp "$REMOTE_DIR/.deploy-candidate.XXXXXX")
+trap 'rm -f -- "$CANDIDATE"' EXIT
 case "$BUILD_TYPE" in
   go)
-    go build -o "$BINARY_NAME" .
+    go build -o "$CANDIDATE" .
     ;;
   rust)
     cargo build --release
-    cp "target/release/$BINARY_NAME" .
+    cp "target/release/$BINARY_NAME" "$CANDIDATE"
     ;;
   *)
-    echo "  Custom: add your build commands here"
+    echo "Error: configure custom build before deployment" >&2
+    exit 1
     ;;
 esac
 
-if [ ! -f "$BINARY_NAME" ]; then
+if [ ! -s "$CANDIDATE" ]; then
   echo "  Error: build failed, binary not found"
   exit 1
 fi
-echo "  Built: $BINARY_NAME ($(du -h "$BINARY_NAME" | cut -f1))"
+chmod 755 "$CANDIDATE"
+echo "  Built: $BINARY_NAME ($(du -h "$CANDIDATE" | cut -f1))"
 
 # 4. Atomic swap & restart
 echo "[3/4] Swapping binary..."
 # Backup old binary
-if [ -f "$BINARY_NAME.old" ]; then
-  rm -f "$BINARY_NAME.old"
+if [ -f "$BINARY_NAME" ]; then
+  cp -p -- "$BINARY_NAME" "$BINARY_NAME.old"
 fi
-cp "$BINARY_NAME" "$BINARY_NAME.new"
-mv -f "$BINARY_NAME.new" "$BINARY_NAME"
+mv -f -- "$CANDIDATE" "$BINARY_NAME"
 
 # Restart service
 echo "[4/4] Restarting service..."
 # systemd
-systemctl restart "$SERVICE_NAME" 2>/dev/null || {
-  echo "  systemd not available, use custom restart"
-  # pkill "$SERVICE_NAME" 2>/dev/null || true
-  # nohup ./"$BINARY_NAME" &
-}
+systemctl restart "$SERVICE_NAME"
 
 # 5. Health check
 echo "  Verifying..."
-sleep 2
-if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
-  echo "  ✅ Deploy OK"
-else
-  echo "  ⚠️  Service status unknown (check manually)"
+healthy=false
+for ((attempt=1; attempt<=HEALTH_ATTEMPTS; attempt++)); do
+  if systemctl is-active --quiet "$SERVICE_NAME"; then
+    healthy=true
+    break
+  fi
+  sleep "$HEALTH_INTERVAL"
+done
+if ! "$healthy"; then
+  echo "Error: service is not active: $SERVICE_NAME" >&2
+  exit 1
 fi
 
 echo "=== Deploy Complete ==="
