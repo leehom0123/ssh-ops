@@ -127,10 +127,14 @@ def test_job_start_sudo_writes_mode600_pass_and_stdin_password():
 
 
 def test_job_start_cd_failure_marks_exited():
+    # The probe must distinguish "started" from "wrapper died instantly"
+    # using the real markers; a constant echo cannot.
     conn = _conn()
     puts = _capture_puts(conn)
-    conn.run = _Runner({"setsid": "launched", "cat": ""})
-    conn.job_start("pwd", workdir="/nope")
+    conn.run = _Runner({"setsid": "", "cat": "EXITED1\n"})
+    result = conn.job_start("pwd", workdir="/nope")
+    assert result["pid"] == ""
+    assert "exited immediately" in result["stdout"]
     wrapper = puts[[p for p in puts if p.endswith("wrapper.sh")][0]][0].decode()
     assert "cannot cd" in wrapper and 'echo 1 > "$J/exit.tmp"' in wrapper
 
@@ -207,12 +211,14 @@ def test_job_kill_only_signals_running_jobs():
 def test_job_list_parses_table_and_nojobs():
     conn = _conn()
     conn.run = MagicMock(return_value={
-        "stdout": "job-1|running||sleep 1\njob-2|exited|0|echo two\n",
+        "stdout": "job-1|running||123|sleep 1\n"
+                  "job-2|exited|0|45|echo a|b\n",  # command may hold |
         "stderr": "", "code": 0})
     got = conn.job_list()
     assert got["count"] == 2
     assert got["jobs"][0] == {"id": "job-1", "state": "running",
                               "exit_code": "", "command": "sleep 1"}
+    assert got["jobs"][1]["command"] == "echo a|b"
     conn2 = _conn()
     conn2.run = MagicMock(return_value={"stdout": "NOJOBS\n", "stderr": "",
                                         "code": 0})
