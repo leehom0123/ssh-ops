@@ -532,6 +532,21 @@ def test_ssh_read_file_tool_maps_args_and_paging_header():
     assert text.endswith("hello")
 
 
+def test_ssh_read_file_nulls_fall_back_to_defaults():
+    # Validation passes explicit nulls through; the registered handler must
+    # coerce them to the documented defaults (pre-factory handler behaviour).
+    conn = MagicMock()
+    conn.read_file.return_value = {
+        "stdout": "x", "stderr": "", "code": 0,
+        "size": 1, "offset": 0, "next_offset": 1, "eof": True,
+    }
+    args = {"server": "demo", "remote_path": "/var/log/app.log",
+            "offset": None, "max_bytes": None, "sudo": False}
+    with patch("mcp_server._server_conn", return_value=conn):
+        _tool("ssh_read_file")(args)
+    conn.read_file.assert_called_once_with("/var/log/app.log", 0, 65536, False)
+
+
 def test_ssh_write_file_tool_maps_args():
     conn = MagicMock()
     conn.write_file.return_value = {

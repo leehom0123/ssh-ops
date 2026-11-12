@@ -344,8 +344,11 @@ def _passthrough(tool_name: str, method: str, *call_args: str,
     """Handler factory for the "one connection method + standard summary" shape.
 
     ``call_args`` are argument names passed positionally to the connection
-    method, in the method's signature order; a ``timeout`` entry is clamped
-    to the MCP request lifetime and auto-annotated in the summary.
+    method, in the method's signature order; a ``(name, default)`` entry
+    replaces an explicit ``null`` argument with ``default`` (validation
+    passes nulls through, matching the pre-factory handlers' coercion).
+    A ``timeout`` entry is clamped to the MCP request lifetime and
+    auto-annotated in the summary.
     ``summary`` items are ``(label, key)`` or ``(label, key, placeholder)``
     where key reads the call args, a computed result field via
     ``result:<key>``, or the clamping annotation via ``@timeout``.
@@ -356,7 +359,12 @@ def _passthrough(tool_name: str, method: str, *call_args: str,
         requested_timeout = None
         effective_timeout = None
         for name in call_args:
+            default = None
+            if isinstance(name, tuple):
+                name, default = name
             value = args[name]
+            if value is None:
+                value = default
             if name == "timeout":
                 requested_timeout = value
                 value = effective_timeout = _mcp_safe_timeout(value)
@@ -680,7 +688,8 @@ STATIC_TOOLS = {
         ),
         annotations={"readOnlyHint": True},
         handler=_passthrough("ssh_read_file", "read_file",
-                             "remote_path", "offset", "max_bytes", "sudo",
+                             "remote_path", ("offset", 0),
+                             ("max_bytes", 65536), "sudo",
                              summary=(("Remote path", "remote_path"),
                                       ("Offset", "result:offset"),
                                       ("Size", "result:size"),
