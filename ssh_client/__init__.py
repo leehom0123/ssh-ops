@@ -57,6 +57,14 @@ class _CompatModule(_ModuleType):
         else:
             super().__setattr__(name, value)
 
+    def __delattr__(self, name):
+        # patch.object() on the package restores by deleting when the
+        # package dict had no binding; the real binding lives in config.
+        if name in _CONFIG_ATTRS:
+            delattr(config, name)
+        else:
+            super().__delattr__(name)
+
     def __dir__(self):
         return sorted(set(self.__dict__) | _CONFIG_ATTRS)
 

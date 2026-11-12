@@ -57,3 +57,25 @@ def test_rebinding_on_old_path_updates_config_single_source():
 def test_unknown_attribute_raises():
     with pytest.raises(AttributeError):
         ssh_client.not_a_real_symbol
+
+
+def test_patch_object_on_package_restores_config():
+    # patch.object(ssh_client, ...) reads through __getattr__ but the real
+    # binding is in config; teardown (setattr-restore or delattr-restore)
+    # must land there too, leaving no stale value behind.
+    from unittest.mock import patch
+    orig = ssh_client.config.SERVERS_DIR
+    with patch.object(ssh_client, "SERVERS_DIR", Path("/probe-a")):
+        assert ssh_client.SERVERS_DIR == Path("/probe-a")
+        assert ssh_client.config.SERVERS_DIR == Path("/probe-a")
+    assert ssh_client.config.SERVERS_DIR == orig
+    assert ssh_client.SERVERS_DIR == orig
+
+
+def test_patch_object_restores_config_after_exception():
+    from unittest.mock import patch
+    orig = ssh_client.config.KNOWN_HOSTS_PATH
+    with pytest.raises(RuntimeError):
+        with patch.object(ssh_client, "KNOWN_HOSTS_PATH", Path("/probe-b")):
+            raise RuntimeError("boom")
+    assert ssh_client.config.KNOWN_HOSTS_PATH == orig
