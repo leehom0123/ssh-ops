@@ -124,6 +124,7 @@ server:
   port: 22                       # SSH 端口（默认 22）
   timeout: 30                    # SSH 连接超时（秒，默认 30）
   scripts_dir: "/home/user/scripts"  # 远程脚本目录
+  jobs_dir: "/home/user/scripts/.jobs"  # 后台任务状态目录（默认 scripts_dir/.jobs）
   shell: "bash"                  # Shell 类型（bash / cmd / powershell，默认 bash）
   system: "Ubuntu 24.04 LTS"    # 操作系统信息
   host_key_checking: "tofu"      # 覆盖全局设置：tofu / strict / insecure
@@ -371,6 +372,38 @@ python cli.py my-server upload script.sh -s
 # Sudo 下载（通过 /tmp 暂存 + chown + SFTP）
 python cli.py my-server download /root/secret.txt ./secret.txt -s
 ```
+
+## 文本文件读写（`read_file` / `write_file`）
+
+小配置文件和日志片段直接走 SFTP 读写内容——不落本地临时文件，不经 shell 引号，也不用整文件下载：
+
+- `ssh_read_file` 一次返回一个字节切片（默认 64 KiB，上限 1 MiB），附带
+  `size` / `next_offset` / `eof`，大日志可分页读取。二进制或非 UTF-8
+  内容会明确报错，提示改用 `ssh_download_file`。
+- `ssh_write_file` 直接发送 UTF-8 文本（`append: true` 为追加）。覆盖写
+  保留原有属主和权限；新建文件为 0644（sudo 时走与 `upload_file` 相同的
+  /tmp 暂存安装路径）。
+- 两者都遵守 `allowed_remote_paths`；root 属主的文件传 `sudo: true`
+  （读走 /tmp 暂存，写走 sudo 安装）。
+
+## 后台任务（`job_start` / `job_status` / `job_kill` / `job_list`）
+
+适合超过单次请求超时的命令（发行版升级、构建、数据迁移）。仅支持 bash 服务器。
+
+- `job_start` 用包装脚本在 `setsid` 下启动命令，立即返回任务 ID
+  （`job-YYYYMMDD-HHMMSS-xxxxxx`）。状态保存在远端 `jobs_dir/<id>/`
+  （`cmd`、`meta`、`wrapper.sh`、`pid`、`out.log`、`err.log`、`exit`、
+  `killed`），MCP 重启或断连都不丢。
+- `job_status` 报告 `running` / `exited`（含退出码）/ `killed` / `lost`，
+  并附上两份日志的尾部。只有命令行里仍带该任务 ID 的存活进程才算
+  `running`，所以被复用的 PID 不会把死任务永远挂在运行态。
+- `job_kill` 对整个进程组发信号（先 TERM，5 秒后升级 KILL），并写
+  `killed` 标记。
+- `job_list` 列出所有任务的状态；`clean_days` 可顺带删除结束超过 N 天的
+  已结束任务。
+- sudo 任务（`sudo: true`）会有一个 0600 的密码文件，包装脚本启动后先
+  读取并立即删除；其日志属 root，status/kill 会依据任务自身 `meta` 里的
+  标记选择权限。
 
 ## 路径解析
 

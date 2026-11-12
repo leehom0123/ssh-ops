@@ -20,6 +20,7 @@ Usage:
 """
 import hashlib
 import io
+import json
 import os
 import posixpath
 import re
@@ -27,6 +28,7 @@ import shlex
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import threading
 import uuid
@@ -182,39 +184,53 @@ def unmangle_msys_argv(argv: list) -> list:
 
     Git-Bash rewrites any look-like-POSIX argument before launching a
     NATIVE Windows program: an upload-file remote path ``/home/bit/x``
-    arrives as ``<msys-root>/home/bit/x`` and is then sent literally to
-    the Linux peer, which fails with a bare ENOENT from SFTP. One
-    ``cygpath`` probe reproduces the exact rewrite; the added prefix is
-    stripped back off. Noop outside Git-Bash, so cmd/PowerShell/MCP
-    invocations and plain POSIX argv are untouched.
+    arrives as ``<msys-root>/home/bit/x``, and ``/tmp/x`` arrives as
+    ``<temp>/x`` (Git-Bash mounts /tmp at %TEMP%). Both rewrites are then
+    sent literally to a Linux peer, which fails with a bare ENOENT from
+    SFTP. Two ``cygpath`` probes reproduce the exact rewrites; the added
+    prefixes are stripped back off. Noop outside Git-Bash, so
+    cmd/PowerShell/MCP invocations and plain POSIX argv are untouched.
+
+    Trade-off: inside Git-Bash only, a Windows-server path that really
+    starts with the msys root or %TEMP% is rewritten to /... — rare and
+    visible in the error message; run from cmd/PowerShell to avoid it.
     """
     if len(argv) <= 1 or sys.platform != "win32" or not os.environ.get("MSYSTEM"):
         return argv
-    probe = "/msys_argv_probe_zxk"
-    try:
-        out = subprocess.run(
-            ["cygpath", "-w", "-m", probe],
-            capture_output=True, text=True, timeout=5,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return argv
-    if out.returncode != 0:
-        return argv
-    converted = out.stdout.strip().replace("\\", "/")
-    # Keep the probe's leading slash so the stripped prefix has no trailing
-    # separator ("<msys-root>", not "<msys-root>/").
-    suffix = probe
-    if not converted.endswith(suffix):
-        return argv
-    prefix = converted[: -len(suffix)]
-    if not prefix:
+    probe_base = "msys_argv_probe_zxk"
+    prefixes = []
+    for probe, replacement in (("/" + probe_base, "/"),
+                               ("/tmp/" + probe_base, "/tmp")):
+        try:
+            out = subprocess.run(
+                ["cygpath", "-w", "-m", probe],
+                capture_output=True, text=True, timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            break
+        if out.returncode != 0:
+            continue
+        converted = out.stdout.strip().replace("\\", "/")
+        # Match on the probe basename only: the /tmp mount maps to
+        # %TEMP%, so the converted form no longer contains "/tmp".
+        # Keep the leading slash so the stripped prefix has no trailing
+        # separator ("<msys-root>", not "<msys-root>/").
+        if not converted.endswith("/" + probe_base):
+            continue
+        prefix = converted[: -(len(probe_base) + 1)]
+        if prefix and all(prefix != p for p, _ in prefixes):
+            prefixes.append((prefix, replacement))
+    if not prefixes:
         return argv
     fixed = [argv[0]]
     for arg in argv[1:]:
-        if arg == prefix:
-            arg = "/"
-        elif arg.startswith(prefix + "/"):
-            arg = arg[len(prefix):]
+        for prefix, replacement in sorted(prefixes, key=lambda pr: -len(pr[0])):
+            if arg == prefix:
+                arg = replacement
+                break
+            if arg.startswith(prefix + "/"):
+                arg = replacement.rstrip("/") + arg[len(prefix):]
+                break
         fixed.append(arg)
     return fixed
 
@@ -346,6 +362,9 @@ class SSHConnection:
         self.scripts_dir = cfg.get("scripts_dir",
                                      f"/home/{cfg.get('user', 'root')}/scripts")
         self.scripts_local_dir = cfg.get("scripts_local_dir")
+        # Background-job state lives on the remote, so jobs survive MCP
+        # restarts; defaults to a hidden dir next to the scripts.
+        self.jobs_dir = cfg.get("jobs_dir") or f"{self.scripts_dir}/.jobs"
         self.shell = cfg.get("shell", "bash")  # "bash", "cmd", "powershell"
         self._tpl = CMD_TEMPLATES[self.shell]
         self.aliases = aliases or []
@@ -1095,6 +1114,410 @@ class SSHConnection:
             f"{self.scripts_dir}/{script_name}", local_path, timeout=timeout,
             overwrite=overwrite, sudo=sudo,
         )
+
+    # ── Text file I/O (SFTP, no shell quoting) ────────────────────
+
+    READ_FILE_MAX_BYTES = 1 << 20  # cap one read at 1 MiB (protects MCP channel)
+
+    def _sftp(self, timeout: int = 30):
+        sftp = paramiko.SFTPClient.from_transport(self._client.get_transport())
+        sftp.get_channel().settimeout(timeout)
+        return sftp
+
+    def read_file(self, remote_path: str, offset: int = 0,
+                  max_bytes: int = 65536, sudo: bool = False) -> dict:
+        """Read a slice of a remote TEXT file over SFTP.
+
+        Byte-offset paging lets a caller walk a large log without
+        downloading it; binary content is rejected so the caller is routed
+        to ``download_file`` instead of receiving replacement characters.
+
+        Args:
+            offset: byte offset to start at (default 0)
+            max_bytes: maximum bytes to return (default 65536, cap 1 MiB)
+            sudo: read root-owned files by staging through /tmp
+        """
+        self.connect()
+        if self._path_blocked(remote_path, "remote"):
+            raise ValueError(f"Remote path not allowed: {remote_path}")
+        offset = max(0, int(offset))
+        max_bytes = int(max_bytes) or 65536
+        if max_bytes > self.READ_FILE_MAX_BYTES:
+            max_bytes = self.READ_FILE_MAX_BYTES
+
+        actual = remote_path
+        tmp_stage = None
+        if sudo:
+            tmp_prefix = self._cmd("tmp_prefix")
+            tmp_stage = f"{tmp_prefix}/.rf_stage_{uuid.uuid4().hex[:8]}"
+            stage = self.run(self._cmd("cp_r", src=remote_path, dst=tmp_stage),
+                             timeout=30, sudo=True, internal=True)
+            if stage["code"] != 0:
+                raise RuntimeError(
+                    f"sudo stage failed: {stage['stderr'].strip()[:200]}")
+            if self._is_unix():
+                self.run(self._cmd("chown", user=self.user, path=tmp_stage),
+                         timeout=10, sudo=True, internal=True)
+            actual = tmp_stage
+        try:
+            sftp = self._sftp(timeout=self.timeout)
+            try:
+                size = sftp.stat(actual).st_size
+                with sftp.open(actual, "rb") as fh:
+                    fh.seek(offset)
+                    data = fh.read(max_bytes)
+            finally:
+                sftp.close()
+        except (TimeoutError, socket.timeout) as exc:
+            raise _operation_failure(
+                "SFTP read", f"{remote_path} from {self.user}@{self.host}:{self.port}",
+                self.timeout, exc,
+            ) from exc
+        finally:
+            if tmp_stage:
+                self.run(self._cmd("rm_dir", path=tmp_stage), timeout=15,
+                         sudo=True, internal=True)
+
+        if b"\x00" in data:
+            raise ValueError(
+                f"Binary content (NUL byte) in {remote_path}; "
+                "use ssh_download_file instead of ssh_read_file")
+        end = offset + len(data)
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            if end < size:
+                # Slice cut a multi-byte character in half; dropping the
+                # ragged tail is safe, the next page re-reads it whole.
+                text = data.decode("utf-8", errors="ignore")
+            else:
+                raise ValueError(
+                    f"{remote_path} is not valid UTF-8 text; "
+                    "use ssh_download_file instead of ssh_read_file")
+        return {
+            "stdout": text, "stderr": "", "code": 0,
+            "size": size, "offset": offset, "next_offset": end,
+            "eof": end >= size,
+        }
+
+    def write_file(self, remote_path: str, content: str,
+                   append: bool = False, sudo: bool = False) -> dict:
+        """Write or append TEXT content to a remote file over SFTP.
+
+        Unlike ``upload_file`` this takes the content itself (UTF-8), so a
+        caller can create small files without staging a local temp file and
+        without shell-quoting hazards. Overwriting keeps the existing
+        file's mode/owner; a new file gets 0644 (0600 under sudo, where the
+        install semantics run as root).
+        """
+        self.connect()
+        if self._path_blocked(remote_path, "remote"):
+            raise ValueError(f"Remote path not allowed: {remote_path}")
+        data = content.encode("utf-8")
+
+        if not sudo:
+            self.run(self._cmd("mkdir", path=posixpath.dirname(remote_path)),
+                     timeout=10, internal=True)
+            sftp = self._sftp(timeout=self.timeout)
+            try:
+                try:
+                    existed = True
+                    sftp.stat(remote_path)
+                except IOError:
+                    existed = False
+                with sftp.open(remote_path, "ab" if append else "wb") as fh:
+                    fh.write(data)
+                if not existed:
+                    try:
+                        sftp.chmod(remote_path, 0o644)
+                    except IOError:
+                        pass  # e.g. Windows SFTP servers without chmod
+            finally:
+                sftp.close()
+            return {
+                "stdout": f"Wrote {len(data)} bytes -> {remote_path}\n",
+                "stderr": "", "code": 0,
+                "remote_path": remote_path, "bytes": len(data),
+            }
+
+        # sudo: append needs the old content; read it as root first.
+        if append:
+            existing = self.run(
+                f"cat -- {shlex.quote(remote_path)} 2>/dev/null || true",
+                timeout=60, sudo=True, internal=True)
+            if existing["code"] == 0 and existing["stdout"]:
+                data = existing["stdout"].encode("utf-8") + data
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp_path = tmp.name
+            tmp.write(data)
+        try:
+            result = self.upload_file(tmp_path, remote_path, timeout=120,
+                                      overwrite=True, sudo=True)
+        finally:
+            os.unlink(tmp_path)
+        if result["code"] == 0:
+            result["stdout"] = f"Wrote {len(data)} bytes -> {remote_path}\n"
+            result["bytes"] = len(data)
+        return result
+
+    # ── Background jobs (bash servers; state stored on the remote) ─
+
+    _JOB_ID_RE = re.compile(r"job-[A-Za-z0-9._-]+\Z")
+
+    def _job_dir(self, job_id: str) -> str:
+        if not isinstance(job_id, str) or not self._JOB_ID_RE.match(job_id):
+            raise ValueError(f"Invalid job id: {job_id!r}")
+        return f"{self.jobs_dir}/{job_id}"
+
+    def _job_shell_state(self, job_dir_q: str, job_id: str, sudo: bool) -> dict:
+        """Resolve one job's {state, exit_code, pid} from remote markers.
+
+        A live pid only counts as running when its command line mentions
+        the job id: pids get reused, and a stale pid must not keep a dead
+        job in 'running' forever.
+        """
+        script = (
+            f"J={job_dir_q}; ID={shlex.quote(job_id)}; "
+            "state='lost'; code=''; pid=$(cat \"$J/pid\" 2>/dev/null); "
+            "if [ -f \"$J/exit\" ]; then state='exited'; code=$(cat \"$J/exit\"); "
+            "elif [ -n \"$pid\" ] && kill -0 \"$pid\" 2>/dev/null; then "
+            "if tr '\\0' ' ' < \"/proc/$pid/cmdline\" 2>/dev/null | grep -q -- \"$ID\"; "
+            "then state='running'; "
+            "elif ps -o args= -p \"$pid\" 2>/dev/null | grep -q -- \"$ID\"; "
+            "then state='running'; fi; "
+            "elif [ -f \"$J/killed\" ]; then state='killed'; fi; "
+            "echo \"$state|$code|$pid\""
+        )
+        out = self.run(script, timeout=15, sudo=sudo, internal=True)
+        state, _, rest = out["stdout"].strip().partition("|")
+        code, _, pid = rest.partition("|")
+        return {"state": state or "lost", "exit_code": code, "pid": pid}
+
+    def _job_meta(self, job_id: str) -> dict:
+        """Read a job's meta JSON (user-owned even for sudo jobs)."""
+        job_dir_q = shlex.quote(self._job_dir(job_id))
+        out = self.run(f"cat -- {job_dir_q}/meta 2>/dev/null || true",
+                       timeout=15, internal=True)
+        if not out["stdout"].strip():
+            raise FileNotFoundError(f"Job not found: {job_id}")
+        return json.loads(out["stdout"])
+
+    def _remote_put_bytes(self, remote_path: str, data: bytes,
+                          mode: int = None):
+        """Write small bytes over SFTP, creating the parent directory."""
+        self.run(self._cmd("mkdir", path=posixpath.dirname(remote_path)),
+                 timeout=10, internal=True)
+        sftp = self._sftp(timeout=self.timeout)
+        try:
+            with sftp.open(remote_path, "wb") as fh:
+                fh.write(data)
+            if mode is not None:
+                try:
+                    sftp.chmod(remote_path, mode)
+                except IOError:
+                    pass
+        finally:
+            sftp.close()
+
+    def job_start(self, command: str, name: str = None, timeout: int = 0,
+                  workdir: str = None, sudo: bool = False) -> dict:
+        """Start a background job that outlives one command timeout.
+
+        State (pid, exit code, output logs) is kept in ``jobs_dir/<id>/`` on
+        the remote, so it survives MCP restarts and dropped connections.
+        The wrapper runs under ``setsid`` as its own process group, which
+        lets ``job_kill`` take down the whole tree. Only bash servers are
+        supported.
+
+        Args:
+            command: shell command line to run in the background
+            name: optional human label (kept in the job listing)
+            timeout: seconds after which the job is killed (0 = no limit)
+            workdir: directory to run the command in (default: home)
+            sudo: run the command as root (password via a 0600 file the
+                wrapper reads and deletes before anything else can see it)
+        """
+        if self.shell != "bash":
+            raise ValueError("Background jobs require a server with shell: bash")
+        command = _repair_surrogateescaped_command(command)
+        command = self._check_command(command)
+        self.connect()
+        if sudo and not self.sudo_password:
+            raise ValueError("sudo_password not configured for this server")
+
+        job_id = (time.strftime("job-%Y%m%d-%H%M%S") + "-"
+                  + uuid.uuid4().hex[:6])
+        job_dir = self._job_dir(job_id)
+        mkdir = self.run(self._cmd("mkdir", path=job_dir), timeout=15,
+                         internal=True)
+        if mkdir["code"] != 0:
+            raise RuntimeError(
+                f"cannot create job dir {job_dir}: {mkdir['stderr'].strip()[:200]}")
+
+        meta = {
+            "id": job_id,
+            "name": name or "",
+            "started": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "timeout": int(timeout or 0),
+            "workdir": workdir or "",
+            "sudo": bool(sudo),
+            "command": command,
+        }
+        # The command travels in its own file, so no quoting of user content
+        # is needed anywhere in the wrapper.
+        self._remote_put_bytes(f"{job_dir}/cmd", command.encode("utf-8"))
+        self._remote_put_bytes(f"{job_dir}/meta",
+                               json.dumps(meta).encode("utf-8"))
+        if sudo:
+            self._remote_put_bytes(f"{job_dir}/pass",
+                                   (self.sudo_password + "\n").encode("utf-8"),
+                                   mode=0o600)
+        inner = "bash -c \"$CMD\""
+        if meta["timeout"]:
+            inner = f"timeout {meta['timeout']} {inner}"
+        launch = (f"printf '%s\\n' \"$SP\" | sudo -S -p '' {inner}"
+                  if sudo else inner)
+        wrapper = (
+            "#!/bin/bash\n"
+            f"J={shlex.quote(job_dir)}\n"
+            "echo $$ > \"$J/pid\"\n"
+            "SP=''\n"
+            "if [ -f \"$J/pass\" ]; then SP=$(<\"$J/pass\"); rm -f \"$J/pass\"; fi\n"
+            f"WORKDIR={shlex.quote(workdir or '')}\n"
+            "if ! cd \"${WORKDIR:-$HOME}\"; then\n"
+            "  echo \"cannot cd to ${WORKDIR:-$HOME}\" > \"$J/err.log\"\n"
+            "  echo 1 > \"$J/exit.tmp\" && mv \"$J/exit.tmp\" \"$J/exit\"\n"
+            "  exit 1\n"
+            "fi\n"
+            "CMD=$(cat \"$J/cmd\")\n"
+            f"{launch} >\"$J/out.log\" 2>\"$J/err.log\" </dev/null\n"
+            "EC=$?\n"
+            "echo $EC > \"$J/exit.tmp\" && mv \"$J/exit.tmp\" \"$J/exit\"\n"
+        )
+        self._remote_put_bytes(f"{job_dir}/wrapper.sh",
+                               wrapper.encode("utf-8"), mode=0o700)
+
+        launched = self.run(
+            "setsid nohup bash " + shlex.quote(f"{job_dir}/wrapper.sh")
+            + " >/dev/null 2>&1 </dev/null & echo launched",
+            timeout=15, internal=True)
+        if "launched" not in launched["stdout"]:
+            raise RuntimeError(
+                f"job launch failed: {launched['stderr'].strip()[:200]}")
+        pid = self.run(
+            "i=0; "
+            f"while [ $i -lt 30 ] && [ ! -s {shlex.quote(job_dir + '/pid')} ]; do "
+            "i=$((i+1)); sleep 0.1 2>/dev/null || sleep 1; done; "
+            f"cat {shlex.quote(job_dir + '/pid')} 2>/dev/null || true",
+            timeout=15, internal=True)["stdout"].strip()
+        return {
+            "stdout": f"Started {job_id} (pid {pid or 'unknown'})\n",
+            "stderr": "", "code": 0,
+            "job_id": job_id, "pid": pid,
+        }
+
+    def job_status(self, job_id: str, tail_lines: int = 100) -> dict:
+        """Report one job's state plus the tail of its output logs."""
+        self.connect()
+        meta = self._job_meta(job_id)
+        job_dir_q = shlex.quote(self._job_dir(job_id))
+        state = self._job_shell_state(job_dir_q, job_id, meta["sudo"])
+        tail = max(1, min(int(tail_lines or 100), 1000))
+        streams = {}
+        for key, fname in (("stdout", "out.log"), ("stderr", "err.log")):
+            streams[key] = self.run(
+                f"tail -n {tail} -- {job_dir_q}/{fname} 2>/dev/null || true",
+                timeout=15, sudo=meta["sudo"], internal=True)["stdout"]
+        return {
+            "job_id": job_id, "name": meta["name"],
+            "state": state["state"], "exit_code": state["exit_code"],
+            "pid": state["pid"], "started": meta["started"],
+            "sudo": meta["sudo"], "command": meta.get("command", ""),
+            "stdout": streams["stdout"], "stderr": streams["stderr"],
+        }
+
+    def job_kill(self, job_id: str) -> dict:
+        """Terminate a running job (whole process group, TERM then KILL)."""
+        self.connect()
+        meta = self._job_meta(job_id)
+        job_dir_q = shlex.quote(self._job_dir(job_id))
+        state = self._job_shell_state(job_dir_q, job_id, meta["sudo"])
+        if state["state"] != "running":
+            return {
+                "stdout": f"Job {job_id} is not running "
+                          f"(state: {state['state']}"
+                          + (f", exit code {state['exit_code']}"
+                             if state["exit_code"] else "") + ")\n",
+                "stderr": "", "code": 0, "job_id": job_id,
+                "state": state["state"], "killed": False,
+            }
+        pid = state["pid"]
+        # The marker is written as the pool user (the job dir is user-owned)
+        # so a later status still reports 'killed' when the exit file never
+        # got written because the wrapper itself was terminated.
+        self.run(f"touch {job_dir_q}/killed", timeout=10, internal=True)
+        self.run(
+            f"kill -s TERM -- -{pid} 2>/dev/null; "
+            f"i=0; while kill -0 {pid} 2>/dev/null && [ $i -lt 5 ]; do "
+            "i=$((i+1)); sleep 1; done; "
+            f"if kill -0 {pid} 2>/dev/null; then kill -s KILL -- -{pid} 2>/dev/null; fi",
+            timeout=30, internal=True)
+        state = self._job_shell_state(job_dir_q, job_id, meta["sudo"])
+        return {
+            "stdout": f"Job {job_id} killed (state: {state['state']})\n",
+            "stderr": "", "code": 0, "job_id": job_id,
+            "state": state["state"], "killed": True,
+        }
+
+    def job_list(self, clean_days: int = 0, sudo: bool = False) -> dict:
+        """List all jobs on the server; optionally drop finished jobs whose
+        exit marker is older than clean_days days (0 = keep everything)."""
+        self.connect()
+        script = (
+            f"ROOT={shlex.quote(self.jobs_dir)}\n"
+            "if [ ! -d \"$ROOT\" ]; then echo 'NOJOBS'; exit 0; fi\n"
+            + (
+                f"find \"$ROOT\" -mindepth 2 -maxdepth 2 -type f -name exit "
+                f"-mtime +{int(clean_days)} 2>/dev/null | while read f; do "
+                "j=${f%/exit}; case \"${j##*/}\" in job-*) rm -rf -- \"$j\";; esac; "
+                "done\n" if clean_days else ""
+            )
+            +
+            "found=0\n"
+            "for J in \"$ROOT\"/job-*; do\n"
+            "  [ -d \"$J\" ] || continue\n"
+            "  found=1\n"
+            "  ID=${J##*/}; state='lost'; code=''; "
+            "pid=$(cat \"$J/pid\" 2>/dev/null)\n"
+            "  if [ -f \"$J/exit\" ]; then state='exited'; code=$(cat \"$J/exit\")\n"
+            "  elif [ -n \"$pid\" ] && kill -0 \"$pid\" 2>/dev/null; then "
+            "if tr '\\0' ' ' < \"/proc/$pid/cmdline\" 2>/dev/null | grep -q -- \"$ID\"; "
+            "then state='running'; "
+            "elif ps -o args= -p \"$pid\" 2>/dev/null | grep -q -- \"$ID\"; "
+            "then state='running'; fi\n"
+            "  elif [ -f \"$J/killed\" ]; then state='killed'; fi\n"
+            "  cmd=$(head -n 1 \"$J/cmd\" 2>/dev/null | cut -c 1-80)\n"
+            "  echo \"$ID|$state|$code|$cmd\"\n"
+            "done\n"
+            "[ $found -eq 0 ] && echo 'NOJOBS' || true\n"
+        )
+        out = self.run(f"bash -c {shlex.quote(script)}", timeout=30,
+                       sudo=sudo, internal=True)
+        if out["code"] != 0:
+            return out
+        lines = [l for l in out["stdout"].splitlines() if l and l != "NOJOBS"]
+        jobs = []
+        for line in lines:
+            jid, _, rest = line.partition("|")
+            state, _, rest = rest.partition("|")
+            code, _, cmd = rest.partition("|")
+            jobs.append({"id": jid, "state": state, "exit_code": code,
+                         "command": cmd})
+        return {
+            "stdout": out["stdout"], "stderr": out["stderr"],
+            "code": 0, "jobs": jobs,
+            "count": len(jobs),
+        }
 
     def list_scripts(self, sudo: bool = False) -> dict:
         """List uploaded scripts on the remote server"""

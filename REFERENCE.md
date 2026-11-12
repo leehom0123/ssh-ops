@@ -124,6 +124,7 @@ server:
   port: 22                       # SSH port (default 22)
   timeout: 30                    # SSH connection timeout (seconds, default 30)
   scripts_dir: "/home/user/scripts"  # Remote script directory
+  jobs_dir: "/home/user/scripts/.jobs"  # Background-job state dir (default: scripts_dir/.jobs)
   shell: "bash"                  # Shell type (bash / cmd / powershell, default bash)
   system: "Ubuntu 24.04 LTS"    # OS information
   host_key_checking: "tofu"      # Override global: tofu / strict / insecure
@@ -359,6 +360,46 @@ python cli.py my-server upload script.sh -s
 # Sudo download (via /tmp staging + chown + SFTP)
 python cli.py my-server download /root/secret.txt ./secret.txt -s
 ```
+
+## Text File I/O (`read_file` / `write_file`)
+
+For small configs and log pages, read/write the content directly over SFTP —
+no local temp file, no shell quoting, no full download:
+
+- `ssh_read_file` returns one byte slice (default 64 KiB, cap 1 MiB) plus
+  `size` / `next_offset` / `eof`, so large logs can be paged through.
+  Binary or non-UTF-8 content is rejected with a pointer to
+  `ssh_download_file`.
+- `ssh_write_file` sends UTF-8 content (`append: true` to add to a file).
+  Overwriting keeps the existing owner/mode; new files are created 0644
+  (0600-then-install semantics under sudo, staged via /tmp like
+  `upload_file`).
+- Both obey `allowed_remote_paths`, and both take `sudo: true` for
+  root-owned files (read stages via /tmp; write goes through the same
+  sudo-install path as `upload_file`).
+
+## Background Jobs (`job_start` / `job_status` / `job_kill` / `job_list`)
+
+For commands that outlive one request timeout (distro upgrades, builds,
+migrations). Bash servers only.
+
+- `job_start` launches the command under `setsid` inside a wrapper and
+  returns a job id immediately (`job-YYYYMMDD-HHMMSS-xxxxxx`). State lives
+  on the remote in `jobs_dir/<id>/` (`cmd`, `meta`, `wrapper.sh`, `pid`,
+  `out.log`, `err.log`, `exit`, `killed`), so jobs survive MCP restarts
+  and dropped connections.
+- `job_status` reports `running` / `exited` (with exit code) / `killed` /
+  `lost` plus the tail of both logs. A live pid only counts as `running`
+  when its command line still names the job id, so a recycled pid can't
+  pin a dead job in `running`.
+- `job_kill` signals the whole process group (TERM, escalating to KILL
+  after 5s) and writes the `killed` marker.
+- `job_list` prints every job's state; `clean_days` (CLI) /
+  `clean_days` arg (MCP) additionally deletes finished jobs older than N
+  days.
+- Sudo jobs (`sudo: true`) get a 0600 password file that the wrapper
+  reads and deletes before anything else runs; their logs are root-owned,
+  so status/kill consult the job's own `meta` to pick the right privilege.
 
 ## Path Resolution
 

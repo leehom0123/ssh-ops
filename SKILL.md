@@ -36,6 +36,12 @@ python cli.py <server> upload-all [-s] [-t sec]              # Upload all alias 
 python cli.py <server> download <remote> <local> [-s] [-p REGEX] [-t sec]  # Download file/dir
 python cli.py <server> download-script <name> <local> [-s] [-t sec]  # Download script from scripts_dir
 python cli.py <server> download-file <remote> <local> [-s] [-t sec]  # Download one file to explicit path
+python cli.py <server> read-file <remote> [-o BYTES] [-l MAX] [-s]  # Read remote text slice (stderr shows next offset)
+python cli.py <server> write-file <remote> [-a] [-s]  # Write stdin text to remote file
+python cli.py <server> job-start "<cmd>"|- [-s] [-t sec] [-w DIR] [-n NAME]  # Background job (bash servers)
+python cli.py <server> job-status <id> [-n LINES]     # Job state + log tail
+python cli.py <server> job-kill <id>                  # Terminate a running job
+python cli.py <server> job-list [--clean-days N] [-s] # List jobs
 python cli.py <server> list-scripts [-s] [-t sec]            # List remote scripts
 python cli.py <server> list-aliases                          # List aliases (no SSH)
 ```
@@ -50,6 +56,11 @@ python cli.py <server> list-aliases                          # List aliases (no 
 | `-n` / `--name` | (upload) Custom remote filename |
 | `-p` / `--pattern` | (download) Regex filter for filenames |
 | `-x` / `--executable` | (upload-file) Set execute permission on Unix |
+| `-o` / `--offset` | (read-file) Byte offset to start from |
+| `-l` / `--length` | (read-file) Max bytes to return |
+| `-a` / `--append` | (write-file) Append instead of overwrite |
+| `-w` / `--workdir` | (job-start) Directory to run the job in |
+| `--clean-days` | (job-list) Delete finished jobs older than N days |
 | `--no-overwrite` | (upload-file/download/download-file/download-script) Fail if destination exists |
 
 Flags are parsed from the tail of the arguments only, so flags inside the
@@ -63,6 +74,8 @@ command text (e.g. `run "grep -s foo"`) are preserved.
 - **Shell** — Set `shell` in server YAML: `bash` / `cmd` / `powershell`
 - **Transfer reuse** — `upload_file`/`download_file` are the single-file primitives; `upload`/`upload-all` reuse the upload path, `download-script` reuses the download path (scripts differ only in the constrained `scripts_dir` path).
 - **Git-Bash paths** — remote POSIX paths pass through unchanged when invoked from Git-Bash; the CLI handles the MSYS argument rewrite itself (no `MSYS2_ARG_CONV_EXCL` workaround).
+- **Text files** — `read-file` pages by bytes (stderr hints the next offset); `write-file` reads content from stdin, so `$`, quotes and newlines can't be mangled.
+- **Background jobs** — `job-start` returns a job id; state lives on the remote (`scripts_dir/.jobs`), survives restarts. `-t` bounds the job's own lifetime (0 = unlimited). Bash servers only.
 
 ## More
 

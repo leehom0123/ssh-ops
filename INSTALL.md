@@ -61,6 +61,20 @@ Add the following entry to your agent's MCP configuration:
 
 Replace `<skills-dir>` with the actual path. For Claude Code global, it's `~/.claude/skills`. For Codex, `~/.codex/skills`. For OpenCode, `~/.opencode/skills`.
 
+### Optional: Streamable HTTP endpoint
+
+Run the same tools behind HTTP instead of stdio (for agents that connect to
+remote MCP endpoints):
+
+```bash
+python mcp_server.py --http --host 127.0.0.1 --port 8802 --token SECRET
+# endpoint: POST http://127.0.0.1:8802/mcp
+```
+
+`--token` is required when binding beyond loopback. The transport implements
+sessions (`Mcp-Session-Id`), 202-acknowledged notifications, and single JSON
+POST responses (server-initiated SSE streaming is not implemented).
+
 ## 4. Verify
 
 After restarting your AI agent, confirm the MCP tools are loaded:
