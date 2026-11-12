@@ -1,6 +1,6 @@
 # 脚本化部署
 
-[English](deploy.md) · [CLI](cli.zh-CN.md) · [运行参考](reference.zh-CN.md)
+[English](../../docs/deploy.md) · [CLI](cli.md) · [运行参考](reference.md)
 
 部署使用两个项目专用脚本：`<project>-deploy-local.sh` 负责打包和上传，`<project>-deploy-server.sh` 负责解压、安装或编译、重启和健康检查。项目名用小写英文，以连字符分词。所有远端交互均通过 `python cli.py`，不直接调用 ssh/scp。
 
@@ -10,9 +10,9 @@
 
 | 模式 | 起点 | 必须按项目调整 |
 |---|---|---|
-| `direct` | [直接部署模板](../deploy/scripts/server-deploy-direct.sh) | Python/Node/Java/.NET 或自定义安装、重启命令、健康检查 URL |
-| `compile` | [编译部署模板](../deploy/scripts/server-deploy-compile.sh) | Go/Rust/自定义构建、最终二进制名称、已有 systemd 服务 |
-| `docker` | [Docker 模板](../deploy/scripts/server-deploy-docker.sh) | Dockerfile 或 Compose、端口、秘密、挂载卷、健康检查 URL |
+| `direct` | [直接部署模板](../../deploy/scripts/server-deploy-direct.sh) | Python/Node/Java/.NET 或自定义安装、重启命令、健康检查 URL |
+| `compile` | [编译部署模板](../../deploy/scripts/server-deploy-compile.sh) | Go/Rust/自定义构建、最终二进制名称、已有 systemd 服务 |
+| `docker` | [Docker 模板](../../deploy/scripts/server-deploy-docker.sh) | Dockerfile 或 Compose、端口、秘密、挂载卷、健康检查 URL |
 | `static` | 改编 direct 模式，没有独立模板 | 构建前端产物、发布、校验并重载 Web 服务、检查最终 URL |
 
 这些是 bash 模板，不支持 Windows 部署，也不会自动创建服务。应先复制、阅读并修改，不要把默认值直接用于生产。构建需要目标工具链与网络，服务定义和部署目录权限也需提前准备。
@@ -38,7 +38,7 @@ python "$CLI" "$SERVER" upload-file ./my-app.tar.gz "$REMOTE_DIR/code.tar.gz" -s
 python "$CLI" "$SERVER" run-script my-app-deploy-server.sh -s -t 900
 ```
 
-例中 shell 命令使用已知常量目录，不要把不可信输入直接插入远端命令。没有 `--overwrite` 选项，上传默认覆盖。完整选项规则见 [CLI 参考](cli.zh-CN.md)。
+例中 shell 命令使用已知常量目录，不要把不可信输入直接插入远端命令。没有 `--overwrite` 选项，上传默认覆盖。完整选项规则见 [CLI 参考](cli.md)。
 
 ## 按所在地选择镜像源
 

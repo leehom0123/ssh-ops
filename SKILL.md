@@ -1,44 +1,76 @@
 ---
 name: ssh-ops
 description: >
-  SSH server management CLI. Run remote commands, deploy scripts, restart services,
-  check logs, upload/download files, read/write remote text files, run background
-  jobs, and manage aliases across bash/cmd/powershell servers.
+  Operate remote SSH servers through the bundled CLI and YAML server configurations.
+  Use for remote commands, service restarts, log inspection, file transfer, text edits,
+  deployments, background jobs, and aliases on bash/cmd/powershell servers, even when
+  the user does not explicitly mention SSH. Local-only builds and GitHub releases
+  without a remote server operation are outside this skill's scope.
   Trigger keywords: deploy, release, ship, server health, SSH, run on server,
   upload script, download file, server alias, 部署, 上线, 发布, 重启, 查看日志, 服务器健康检查.
 ---
 
-# ssh-ops CLI 技能入口
+# ssh-ops CLI skill
 
-先用 `list-servers` 查名称，再用 `list-aliases` 查可复用操作。所有命令在仓库目录执行；其他目录需使用 `cli.py` 的绝对路径。安装见[安装指南](docs/install.zh-CN.md)。
+[中文参考](zh-CN/SKILL.md)
 
-## 命令速查
+## Locate the tool and target
 
-下表服务器操作均以 `python cli.py <server>` 开头。完整选项和默认值只在 [CLI 参考](docs/cli.zh-CN.md)中维护。
+Use the directory containing this skill file as the tool root to locate `cli.py`. Use a Python interpreter with the project's dependencies installed. Do not assume the user's project contains `cli.py`, and do not change the user's project working directory just to run this tool. The `python cli.py` examples below are shorthand: invoke the confirmed interpreter and CLI by absolute path. Local file paths resolve against the current working directory.
 
-| 用途 | 命令 |
+Reuse an interpreter already confirmed for this installation; otherwise check the checkout's virtual environment or the configured interpreter before installing anything. For example, after replacing the paths with the actual installation:
+
+```bash
+/absolute/path/to/python /absolute/path/ssh-ops/cli.py my-server run "uptime"
+```
+
+Use `list-servers` to confirm server names. Do not guess names or substitute listing indexes for names. Before reusing an operation, use `list-aliases` to inspect its command, sudo setting, and timeout. Do not repeat discovery already completed for the same task. Read the [installation guide](docs/install.md) only when dependencies or configuration are missing.
+
+## Choose the operation
+
+- Prefer a suitable existing alias after checking that its content, target, and privileges match the task.
+- Use `run` for ad hoc checks. For complex quoting, `$`, or multiline commands, use `run -` with a quoted heredoc to avoid local shell expansion.
+- Use text I/O for small configurations and log excerpts. Transfer binary files, large files, or text that must be preserved exactly; do not concatenate paged text as a lossless copy.
+- Use background jobs for operations likely to exceed one request's wait time. Save the returned job ID and query its status. Background jobs require a bash server.
+- For deployment, read the [deployment chapter](docs/deploy.md) before generating and executing project scripts. Do not improvise a sequence of release commands.
+
+## Command quick reference
+
+Server operations in the table are prefixed with `python cli.py <server>`. Full options and defaults are maintained only in the [CLI reference](docs/cli.md).
+
+| Purpose | Command |
 |---|---|
-| 发现服务器 | `python cli.py list-servers` |
-| 管理本地配置 | `python cli.py create-server/update-server/copy-server/delete-server ...`，按 CLI 参考选择单个命令 |
-| 查别名、运行别名 | `list-aliases`、`alias <name>` |
-| 执行命令 | `run '<command>'`；复杂命令用 `run -` 从 stdin 读取 |
-| 上传与运行脚本 | `upload <local>`、`run-script <name>`、`upload-all`、`list-scripts` |
-| 普通文件 | `upload-file <local> <remote>`、`download-file <remote> <local>` |
-| 目录与脚本下载 | `download <remote> <local>`、`download-script <name> <local>` |
-| 文本读写 | `read-file <remote>`、`write-file <remote> < input.txt` |
-| 长任务 | `job-start '<command>'` → `job-status <id>`；需终止时用 `job-kill <id>` |
-| 任务列表 | `job-list`；清理前先确认用户授权 |
+| Discover servers | `python cli.py list-servers` |
+| Inspect and run aliases | `list-aliases`, `alias <name>` |
+| Execute commands | `run '<command>'`; use `run -` to read complex commands from stdin |
+| Upload and run scripts | `upload <local>`, `run-script <name>`, `upload-all`, `list-scripts` |
+| Transfer files | `upload-file <local> <remote>`, `download-file <remote> <local>` |
+| Download directories and scripts | `download <remote> <local>`, `download-script <name> <local>` |
+| Read and write text | `read-file <remote>`, `write-file <remote> < input.txt` |
+| Long-running work | `job-start '<command>'` → `job-status <id>`; use `job-kill <id>` when termination is needed |
+| List jobs | `job-list` |
 
-## 关键注意事项
+For creating, updating, copying, or deleting local server configurations, choose the specific command from the [CLI reference](docs/cli.md). Do not modify local configuration files through remote operations.
 
-- 选项放在位置参数之后。不要使用不存在的 `--overwrite`；默认允许覆盖，部分传输命令可用 `--no-overwrite`。
-- sudo 用 CLI 的 `-s`，不在命令里拼密码。别名的权限与超时由 YAML 决定，不受 CLI `-s/-t` 覆盖。
-- 先读原内容再改配置，修改后执行应用校验，再重启。删除配置、清理任务或部署前确认目标。
-- 实时输出用 CLI `run`、`run-script`、`alias`；MCP 不推送执行过程。普通命令超时不保证远端进程已终止。
-- 文本分页、sudo 暂存、命令过滤与路径限制有明确边界，见[运行参考](docs/reference.zh-CN.md)。不要把正则过滤当沙箱。
+## Important rules
 
-## 部署
+- Put options after positional arguments. There is no `--overwrite`: transfers overwrite by default, and selected transfer commands accept `--no-overwrite`.
+- Use CLI `-s` for sudo; never embed passwords in commands. Aliases use YAML privilege and timeout settings, not CLI `-s/-t` overrides.
+- Read a remote configuration before modifying it and retain a recoverable copy. Validate with the application's own checks before restarting.
+- Act when the user has clearly authorized the operation and the target and scope are clear. Ask when the target, deletion scope, or required privileges are unclear; do not ask again for authorization already given.
+- Use CLI `run`, `run-script`, or `alias` for live output; MCP does not stream execution progress.
+- Text paging, sudo staging, command filtering, and path restrictions have limits documented in the [runtime reference](docs/reference.md). Regex filtering is not a sandbox.
 
-按[部署专章](docs/deploy.zh-CN.md)先确认服务器、所在地、模式、目录、端口和检查地址，再生成项目专用的本地脚本与服务器脚本。模板位于 [deploy/scripts/](deploy/scripts/)，不是无需修改即可运行的通用发布器。所有远端交互走此 CLI；镜像源与健康检查规则以部署专章为准。
+## Deployment
 
-MCP 形态入口另见 [SKILL.mcp.md](SKILL.mcp.md)。
+Follow the [deployment chapter](docs/deploy.md): confirm the server, region, mode, directory, ports, and health endpoint, then generate project-specific local and server scripts. The [deploy/scripts/](deploy/scripts/) templates require customization; they are not ready-to-run universal release tools. Route all remote interaction through this CLI. The deployment chapter is the authority for package-source and health-check rules.
+
+## Verify and report
+
+Successful startup is not task completion. Inspect operation exit codes and actual output. For background jobs, check the final state and job exit code; for releases and restarts, also check application health. A successful local CLI exit alone is insufficient.
+
+A normal command timeout does not guarantee that its remote process stopped. After a timeout or disconnect, inspect remote jobs, processes, and service state before deciding whether to retry. Avoid duplicate deployments or migrations.
+
+Report the target server, operations actually performed, and verification results. State what remains incomplete or unverified. If work is still running, include the job ID rather than claiming completion.
+
+For the MCP interface, see [SKILL.mcp.md](SKILL.mcp.md).

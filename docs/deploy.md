@@ -1,6 +1,6 @@
 # Scripted deployment
 
-[中文](deploy.zh-CN.md) · [CLI](cli.md) · [Runtime reference](reference.md)
+[中文](../zh-CN/docs/deploy.md) · [CLI](cli.md) · [Runtime reference](reference.md)
 
 Deployment uses two project-specific scripts: `<project>-deploy-local.sh` packages and uploads; `<project>-deploy-server.sh` extracts, installs/builds, restarts, and checks health. Use lowercase hyphenated project names. All remote interaction goes through `python cli.py`, not raw ssh/scp.
 

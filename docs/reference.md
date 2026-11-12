@@ -1,6 +1,6 @@
 # Runtime and configuration reference
 
-[中文](reference.zh-CN.md) · [CLI syntax](cli.md) · [MCP tools](../SKILL.mcp.md)
+[中文](../zh-CN/docs/reference.md) · [CLI syntax](cli.md) · [MCP tools](../SKILL.mcp.md)
 
 This is the authority for configuration and runtime behaviour. Deployment-specific policy belongs in the [deployment chapter](deploy.md).
 

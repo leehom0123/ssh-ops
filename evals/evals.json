@@ -1,0 +1,23 @@
+{
+  "skill_name": "ssh-ops",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Offline simulation only: do not connect to a server or execute remote commands. My current project directory is D:/projects/shop. ssh-ops is installed at D:/repos/2026/ssh-alias-mcp and its confirmed interpreter is C:/Python314/python.exe. The server prod-web is already confirmed and has no relevant aliases. Show the command to check uptime without changing my working directory or installing dependencies.",
+      "expected_output": "Use the confirmed interpreter and absolute cli.py path with prod-web run uptime. Preserve the project working directory and do not install dependencies or repeat discovery already supplied.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Offline simulation only: propose commands but do not execute them. The bash server prod-db is already confirmed, has no relevant aliases, and I authorize python migrate.py in /opt/app. It normally takes 40 minutes. Explain how to start it and verify completion without keeping one request open or reporting success prematurely.",
+      "expected_output": "Use job-start with the working directory, retain the returned job ID, and use job-status to inspect the final state, task exit code, and output. Do not equate successful startup with a completed migration.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Offline simulation only: do not operate the server. A release command on the confirmed prod-web server just timed out. We have no background job ID and do not know whether the remote deployment finished. Should I immediately run the release again? Describe the next checks without inventing a job ID, deployment command, or service name.",
+      "expected_output": "Do not immediately repeat the release. Explain that remote execution may continue, inspect available process, service, and deployment evidence, and request only missing details needed for specific checks. State that completion is unverified.",
+      "files": []
+    }
+  ]
+}
