@@ -591,3 +591,40 @@ def test_unmangle_survives_unrecognized_probe_output(monkeypatch):
     )
     argv = ["cli.py", "srv", "run", "C:/Program Files/Git/home/x"]
     assert ssh_client.unmangle_msys_argv(argv) == argv
+
+
+def test_unmangle_strips_temp_mount_for_tmp_remote_paths(monkeypatch):
+    # Git-Bash mounts /tmp at %TEMP%, so /tmp/x is rewritten to
+    # <temp>/x — a second probe undoes that form too.
+    monkeypatch.setattr(ssh_client.sys, "platform", "win32")
+    monkeypatch.setenv("MSYSTEM", "MINGW64")
+
+    def probe(cmd, *a, **k):
+        target = cmd[-1]
+        if target.startswith("/tmp/"):
+            return _Probe("C:/Users/li/AppData/Local/Temp/msys_argv_probe_zxk\n")
+        return _Probe("C:/Program Files/Git/msys_argv_probe_zxk\n")
+
+    monkeypatch.setattr(ssh_client.subprocess, "run", probe)
+    argv = ["cli.py", "srv", "write-file",
+            "C:/Users/li/AppData/Local/Temp/notes.txt"]
+    assert ssh_client.unmangle_msys_argv(argv) == [
+        "cli.py", "srv", "write-file", "/tmp/notes.txt"]
+
+
+def test_unmangle_tolerates_missing_temp_mapping(monkeypatch):
+    # A cygpath without a /tmp mount returns failure for that probe; the
+    # root-prefix behavior must be unaffected.
+    monkeypatch.setattr(ssh_client.sys, "platform", "win32")
+    monkeypatch.setenv("MSYSTEM", "MINGW64")
+
+    def probe(cmd, *a, **k):
+        if cmd[-1].startswith("/tmp/"):
+            return _Probe("", returncode=1)
+        return _Probe("C:/Program Files/Git/msys_argv_probe_zxk\n")
+
+    monkeypatch.setattr(ssh_client.subprocess, "run", probe)
+    argv = ["cli.py", "srv", "upload-file", "a",
+            "C:/Program Files/Git/home/bit/f.bin"]
+    assert ssh_client.unmangle_msys_argv(argv) == [
+        "cli.py", "srv", "upload-file", "a", "/home/bit/f.bin"]

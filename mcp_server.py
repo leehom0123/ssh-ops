@@ -43,7 +43,10 @@ MCP_INSTRUCTIONS = (
     "Use ssh_list_servers first to discover configured servers. "
     "Use ssh_list_aliases before ssh_run_alias unless you already know the alias name. "
     "Server config create, update, copy, and delete tools modify local YAML files. "
-    "Commands, uploads, downloads, and aliases can modify remote systems."
+    "Commands, uploads, downloads, and aliases can modify remote systems. "
+    "Use ssh_read_file/ssh_write_file for small text files (no download); "
+    "use ssh_job_start/ssh_job_status/ssh_job_kill/ssh_job_list for commands "
+    "that outlive one request timeout (bash servers)."
 )
 TOOL_NAME_MAX_LENGTH = 128
 SECRET_FIELDS = {
@@ -502,6 +505,85 @@ def _handle_ssh_download_script(args: dict) -> dict:
     )
 
 
+def _handle_ssh_read_file(args: dict) -> dict:
+    result = _server_conn(args).read_file(
+        args["remote_path"],
+        offset=int(args["offset"] or 0),
+        max_bytes=int(args["max_bytes"] or 65536),
+        sudo=args["sudo"],
+    )
+    return _with_execution_summary(
+        result,
+        _execution_summary("ssh_read_file", args["server"], [
+            ("Remote path", args["remote_path"]),
+            ("Offset", result["offset"]),
+            ("Size", result["size"]),
+            ("Next offset", result["next_offset"]),
+            ("EOF", result["eof"]),
+            ("Sudo", args["sudo"]),
+        ]),
+    )
+
+
+def _handle_ssh_write_file(args: dict) -> dict:
+    result = _server_conn(args).write_file(
+        args["remote_path"],
+        args["content"],
+        append=args["append"],
+        sudo=args["sudo"],
+    )
+    return _with_execution_summary(
+        result,
+        _execution_summary("ssh_write_file", args["server"], [
+            ("Remote path", args["remote_path"]),
+            ("Bytes", result["bytes"]),
+            ("Append", args["append"]),
+            ("Sudo", args["sudo"]),
+        ]),
+    )
+
+
+def _handle_ssh_job_start(args: dict) -> dict:
+    result = _server_conn(args).job_start(
+        args["command"],
+        name=args["name"],
+        timeout=int(args["timeout"] or 0),
+        workdir=args["workdir"],
+        sudo=args["sudo"],
+    )
+    return _with_execution_summary(
+        result,
+        _execution_summary("ssh_job_start", args["server"], [
+            ("Command", args["command"]),
+            ("Job id", result["job_id"]),
+            ("Name", args["name"] or '(none)'),
+            ("Job timeout", args["timeout"] or '(none)'),
+            ("Workdir", args["workdir"] or '(home)'),
+            ("Sudo", args["sudo"]),
+        ]),
+    )
+
+
+def _handle_ssh_job_status(args: dict) -> dict:
+    status = _server_conn(args).job_status(
+        args["job_id"], tail_lines=int(args["tail_lines"] or 100))
+    return _json_text({"tool": "ssh_job_status", "server": args["server"],
+                       **status})
+
+
+def _handle_ssh_job_kill(args: dict) -> dict:
+    result = _server_conn(args).job_kill(args["job_id"])
+    return _json_text({"tool": "ssh_job_kill", "server": args["server"],
+                       **result})
+
+
+def _handle_ssh_job_list(args: dict) -> dict:
+    result = _server_conn(args).job_list(
+        clean_days=int(args["clean_days"] or 0), sudo=args["sudo"])
+    return _json_text({"tool": "ssh_job_list", "server": args["server"],
+                       "count": result["count"], "jobs": result["jobs"]})
+
+
 def _handle_ssh_upload_all_scripts(args: dict) -> dict:
     return _with_execution_summary(
         _server_conn(args).upload_all_scripts(sudo=args["sudo"]),
@@ -694,6 +776,101 @@ STATIC_TOOLS = {
         args=(SERVER_ARG, _arg("sudo", "boolean", "List as root", default=False)),
         annotations={"readOnlyHint": True},
         handler=_handle_ssh_list_scripts,
+    ),
+    "ssh_read_file": ToolSpec(
+        name="ssh_read_file",
+        title="Read Remote Text File",
+        description=(
+            "Read a byte slice of a remote text file over SFTP; page through "
+            "large logs with the returned next offset. Refuses binary or "
+            "non-UTF-8 content (use ssh_download_file for those)."
+        ),
+        args=(
+            SERVER_ARG,
+            _arg("remote_path", "string", "Remote file path", required=True),
+            _arg("offset", "number", "Byte offset to start from (default 0)", default=0),
+            _arg("max_bytes", "number", "Max bytes to return (default 65536, cap 1 MiB)", default=65536),
+            _arg("sudo", "boolean", "Read root-owned files via sudo stage", default=False),
+        ),
+        annotations={"readOnlyHint": True},
+        handler=_handle_ssh_read_file,
+    ),
+    "ssh_write_file": ToolSpec(
+        name="ssh_write_file",
+        title="Write Remote Text File",
+        description=(
+            "Write or append UTF-8 text to a remote file over SFTP, with no "
+            "shell quoting involved. Overwriting keeps the current mode/owner."
+        ),
+        args=(
+            SERVER_ARG,
+            _arg("remote_path", "string", "Remote file path", required=True),
+            _arg("content", "string", "Text content (UTF-8)", required=True),
+            _arg("append", "boolean", "Append instead of overwrite", default=False),
+            _arg("sudo", "boolean", "Write as root via sudo stage", default=False),
+        ),
+        annotations={"readOnlyHint": False, "destructiveHint": False},
+        handler=_handle_ssh_write_file,
+    ),
+    "ssh_job_start": ToolSpec(
+        name="ssh_job_start",
+        title="Start SSH Background Job",
+        description=(
+            "Start a long-running command in the background and return a job "
+            "id immediately (bash servers). State lives on the remote, so it "
+            "survives MCP restarts; poll with ssh_job_status."
+        ),
+        args=(
+            SERVER_ARG,
+            _arg("command", "string", "Command to run in the background", required=True),
+            _arg("name", "string", "Optional label for listings"),
+            _arg("timeout", "number", "Kill the job after this many seconds (0 = no limit)", default=0),
+            _arg("workdir", "string", "Directory to run in (default: home)"),
+            _arg("sudo", "boolean", "Run as root", default=False),
+        ),
+        annotations={"readOnlyHint": False, "destructiveHint": True},
+        handler=_handle_ssh_job_start,
+    ),
+    "ssh_job_status": ToolSpec(
+        name="ssh_job_status",
+        title="Check SSH Job Status",
+        description=(
+            "Report a job's state (running|exited|killed|lost), exit code, "
+            "and the tail of its stdout/stderr logs."
+        ),
+        args=(
+            SERVER_ARG,
+            _arg("job_id", "string", "Job id returned by ssh_job_start", required=True),
+            _arg("tail_lines", "number", "Log lines to return per stream (default 100)", default=100),
+        ),
+        annotations={"readOnlyHint": True},
+        handler=_handle_ssh_job_status,
+    ),
+    "ssh_job_kill": ToolSpec(
+        name="ssh_job_kill",
+        title="Kill SSH Job",
+        description="Terminate a running job and its whole process group (TERM, then KILL).",
+        args=(
+            SERVER_ARG,
+            _arg("job_id", "string", "Job id returned by ssh_job_start", required=True),
+        ),
+        annotations={"readOnlyHint": False, "destructiveHint": True},
+        handler=_handle_ssh_job_kill,
+    ),
+    "ssh_job_list": ToolSpec(
+        name="ssh_job_list",
+        title="List SSH Jobs",
+        description=(
+            "List background jobs on a server with their states; optionally "
+            "delete finished jobs whose exit marker is older than N days."
+        ),
+        args=(
+            SERVER_ARG,
+            _arg("clean_days", "number", "Drop finished jobs older than this many days (0 = keep)", default=0),
+            _arg("sudo", "boolean", "Also see root-owned job dirs", default=False),
+        ),
+        annotations={"readOnlyHint": True},
+        handler=_handle_ssh_job_list,
     ),
     "ssh_list_servers": ToolSpec(
         name="ssh_list_servers",
@@ -910,6 +1087,146 @@ def write_response(msg):
 _WRITE_LOCK = threading.Lock()
 
 
+# ── Streamable HTTP transport (spec-lite: single-JSON POST responses) ──
+
+HTTP_HELP = """Transport options:
+    (default)             MCP over stdio
+    --http                MCP over Streamable HTTP (POST <path> with JSON-RPC)
+    --host HOST           HTTP bind address (default 127.0.0.1)
+    --port PORT           HTTP port (default 8802)
+    --path PATH           HTTP endpoint path (default /mcp)
+    --token SECRET        Require 'Authorization: Bearer <token>' (required
+                          when binding beyond loopback)
+"""
+
+
+class _HttpSessions:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._sessions: Dict[str, str] = {}
+
+    def create(self, protocol_version: str) -> str:
+        sid = sha1(f"{time.time_ns()}".encode()).hexdigest()
+        with self._lock:
+            self._sessions[sid] = protocol_version
+        return sid
+
+    def known(self, sid) -> bool:
+        return bool(sid) and sid in self._sessions
+
+    def drop(self, sid) -> bool:
+        with self._lock:
+            return self._sessions.pop(sid, None) is not None
+
+
+def _make_http_handler(sessions: _HttpSessions, endpoint: str, token):
+    from http.server import BaseHTTPRequestHandler
+
+    class McpHttpHandler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+        server_version = "ssh-alias-mcp/1.0"
+
+        def log_message(self, fmt, *args):
+            print(f"[http] {self.address_string()} {fmt % args}",
+                  file=sys.stderr)
+
+        def _respond(self, code: int, body: bytes = b"", headers=()):
+            self.send_response(code)
+            for key, value in headers:
+                self.send_header(key, value)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            if body:
+                self.wfile.write(body)
+
+        def _json(self, code: int, payload, headers=()):
+            line = _dumps_utf8_safe(payload).encode("utf-8")
+            self._respond(code, line,
+                          (("Content-Type", "application/json"),) + tuple(headers))
+
+        def _authorized(self) -> bool:
+            return token is None or \
+                self.headers.get("Authorization") == f"Bearer {token}"
+
+        def _is_initialize(self, msg) -> bool:
+            if isinstance(msg, dict):
+                return msg.get("method") == "initialize" and "id" in msg
+            return any(self._is_initialize(item) for item in msg
+                       if isinstance(item, dict))
+
+        def do_POST(self):
+            if self.path.split("?", 1)[0] != endpoint:
+                self._json(404, jsonrpc_error(None, -32601, "Unknown path"))
+                return
+            if not self._authorized():
+                self._respond(401, b"Unauthorized")
+                return
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+            except ValueError:
+                length = 0
+            try:
+                msg = json.loads(self.rfile.read(length).decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                self._json(400, jsonrpc_error(None, -32700, "Parse error"))
+                return
+
+            version = self.headers.get("Mcp-Protocol-Version")
+            if version is not None and version not in SUPPORTED_PROTOCOL_VERSIONS:
+                self._respond(400, b"Unsupported protocol version")
+                return
+
+            sid = self.headers.get("Mcp-Session-Id")
+            initializing = self._is_initialize(msg)
+            if not initializing and not sessions.known(sid):
+                self._json(404, jsonrpc_error(
+                    None, -32000, "No such session; send initialize first"))
+                return
+
+            resp = handle_message(msg)
+            if resp is None:  # notifications get an empty 202
+                self._respond(202)
+                return
+            headers = ()
+            if initializing and isinstance(resp, dict) and "result" in resp:
+                sid = sessions.create(
+                    resp["result"].get("protocolVersion",
+                                       LATEST_PROTOCOL_VERSION))
+                headers = (("Mcp-Session-Id", sid),)
+            self._json(200, resp, headers)
+
+        def do_GET(self):
+            # Server-initiated SSE streaming is not implemented; the spec
+            # makes it optional.
+            self._respond(405)
+
+        def do_DELETE(self):
+            if self.path.split("?", 1)[0] != endpoint:
+                self._respond(404)
+                return
+            if not self._authorized():
+                self._respond(401, b"Unauthorized")
+                return
+            if sessions.drop(self.headers.get("Mcp-Session-Id")):
+                self._respond(200)
+            else:
+                self._respond(404)
+
+    return McpHttpHandler
+
+
+def _serve_http(host: str, port: int, path: str, token: str = None):
+    from http.server import ThreadingHTTPServer
+    if host not in ("127.0.0.1", "localhost", "::1") and not token:
+        raise SystemExit("--token is required when --http binds beyond loopback")
+    sessions = _HttpSessions()
+    httpd = ThreadingHTTPServer((host, port),
+                                _make_http_handler(sessions, path, token))
+    print(f"ssh-alias-mcp listening on http://{host}:{port}{path}",
+          file=sys.stderr)
+    httpd.serve_forever()
+
+
 def _process_line(line: str):
     try:
         req = json.loads(line)
@@ -922,8 +1239,49 @@ def _process_line(line: str):
         write_response(resp)
 
 
+def _parse_launch_args(argv):
+    """Split launch args into (http_config, help_requested).
+
+    http_config is None for stdio mode, else a dict for _serve_http().
+    """
+    config = {"host": "127.0.0.1", "port": 8802, "path": "/mcp", "token": None}
+    enabled = False
+    help_requested = False
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--http":
+            enabled = True
+        elif arg in ("-h", "--help"):
+            help_requested = True
+        elif arg in ("--host", "--port", "--path", "--token"):
+            if i + 1 >= len(argv):
+                raise SystemExit(f"Missing value for {arg}")
+            value = argv[i + 1]
+            if arg == "--port":
+                try:
+                    config["port"] = int(value)
+                except ValueError:
+                    raise SystemExit(f"Invalid --port: {value}")
+            else:
+                key = arg[2:]
+                config[key] = value
+            i += 1
+        else:
+            raise SystemExit(f"Unknown argument: {arg}\n\n{HTTP_HELP}")
+        i += 1
+    return (config if enabled else None), help_requested
+
+
 def main():
-    """MCP stdio main loop."""
+    """MCP entry point — stdio by default, Streamable HTTP with --http."""
+    http_config, help_requested = _parse_launch_args(sys.argv[1:])
+    if help_requested:
+        print(HTTP_HELP)
+        sys.exit(0)
+    if http_config:
+        _serve_http(**http_config)
+        return
     # SSH calls are blocking. Process requests concurrently so one slow host
     # cannot head-of-line block health checks or calls to other servers.
     with ThreadPoolExecutor(max_workers=8, thread_name_prefix="mcp-request") as executor:

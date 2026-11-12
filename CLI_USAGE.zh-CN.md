@@ -20,6 +20,12 @@ python cli.py <server> download <remote> <local> [-s] [-p PATTERN] [-t sec]  # �
 python cli.py <server> download-file <remote> <local> [-s] [-t sec]  # 下载单个文件到指定本地路径
 python cli.py <server> download-script <name> <local> [-s] [-t sec]  # 从 scripts_dir 下载脚本
 python cli.py <server> upload-all [-s] [-t sec]         # 上传所有别名脚本（-s = sudo）
+python cli.py <server> read-file <remote> [-o 字节] [-l 上限] [-s]  # 分页读取远端文本（stderr 提示下一个偏移）
+python cli.py <server> write-file <remote> [-a] [-s]     # 把 stdin 文本写入远端文件（UTF-8，不经引号转义）
+python cli.py <server> job-start "<cmd>"|- [-s] [-t 秒] [-w 目录] [-n 名称]  # 后台任务（仅 bash 服务器；- 从 stdin 读命令）
+python cli.py <server> job-status <id> [-n 行数]         # 任务状态、退出码、日志尾部
+python cli.py <server> job-kill <id>                     # 终止运行中的任务（整个进程组）
+python cli.py <server> job-list [--clean-days N] [-s]    # 列出任务；清理 N 天前的已结束任务
 python cli.py <server> list-scripts [-s] [-t sec]       # 列出远程脚本（-s = 列出 root 拥有的脚本）
 python cli.py <server> list-aliases                      # 列出别名（本地，无需 SSH）
 ```
@@ -53,6 +59,11 @@ EOF
 - `-r` / `--run` —（上传）上传后立即执行脚本
 - `-p` / `--pattern` PAT —（下载）正则表达式过滤文件名
 - `-x` / `--executable` —（upload-file）在 Unix 服务器设为可执行
+- `-o` / `--offset` N —（read-file）起始字节偏移
+- `-l` / `--length` N —（read-file）最多返回字节数（默认 65536）
+- `-a` / `--append` —（write-file）追加而不是覆盖
+- `-w` / `--workdir` 目录 —（job-start）任务的工作目录
+- `--clean-days` N —（job-list）删除结束标记超过 N 天的已结束任务
 - `--no-overwrite` —（upload-file / download / download-file / download-script）目标路径已存在时报错失败
 - `--replace` —（update-server）整份替换配置，而不是递归合并补丁
 
@@ -109,10 +120,23 @@ python cli.py my-server download-script fix.sh ./fix.sh
 
 # 列出 root 拥有的脚本
 python cli.py my-server list-scripts -s
+
+# 分页读取日志（stderr 会提示下一个偏移）
+python cli.py my-server read-file /var/log/syslog -o 0 -l 4096
+# 从标准输入写配置文件（$ 和引号保持原样）
+python cli.py my-server write-file /etc/profile.d/py.sh <<'EOF'
+export PATH=$HOME/.local/bin:$PATH
+EOF
+# 耗时任务：启动、轮询、终止
+python cli.py my-server job-start "apt full-upgrade -y" -s
+python cli.py my-server job-status job-20261113-101500-ab12cd
+python cli.py my-server job-kill job-20261113-101500-ab12cd
+python cli.py my-server job-list --clean-days 7
 ```
 
 ## 注意事项
 
 - **sudo** — 使用 `run` 配合 `sudo: true`，不要在 `run` 中内联 `sudo -S`
 - **Docker 权限** — 如果用户不在 `docker` 组中，在别名上设置 `sudo: true`
+- **后台任务** — `job-start` 的 `-t` 限制的是任务自身的存活时长（0 = 不限），不是本地等待时间。任务状态保存在远端 `jobs_dir`（默认 `scripts_dir/.jobs`），MCP 重启后仍可查询。仅支持 bash 服务器。
 - **Git-Bash 路径** — 从 Git-Bash 调用时远端 POSIX 路径按原样送达，CLI 自己处理 MSYS 重写，无需 `MSYS2_ARG_CONV_EXCL` workaround。

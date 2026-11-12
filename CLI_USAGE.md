@@ -20,6 +20,12 @@ python cli.py <server> download <remote> <local> [-s] [-p PATTERN] [-t sec]  # D
 python cli.py <server> download-file <remote> <local> [-s] [-t sec]  # Download one file to explicit path
 python cli.py <server> download-script <name> <local> [-s] [-t sec]  # Download script from scripts_dir
 python cli.py <server> upload-all [-s] [-t sec]         # Upload all alias scripts (-s = sudo)
+python cli.py <server> read-file <remote> [-o bytes] [-l max] [-s]  # Read remote TEXT slice (paging via stderr hint)
+python cli.py <server> write-file <remote> [-a] [-s]     # Write stdin text to remote file (UTF-8, no quoting)
+python cli.py <server> job-start "<cmd>"|- [-s] [-t sec] [-w dir] [-n name]  # Background job (bash servers; - reads cmd from stdin)
+python cli.py <server> job-status <id> [-n lines]        # Job state, exit code, log tail
+python cli.py <server> job-kill <id>                      # Terminate a running job (whole process group)
+python cli.py <server> job-list [--clean-days N] [-s]    # List jobs; drop finished ones older than N days
 python cli.py <server> list-scripts [-s] [-t sec]       # List remote scripts (-s = list root-owned)
 python cli.py <server> list-aliases                      # List aliases (local, no SSH)
 ```
@@ -57,6 +63,11 @@ EOF
 - `-r` / `--run` — (upload) Run script immediately after upload
 - `-p` / `--pattern` PAT — (download) Regex pattern to filter filenames
 - `-x` / `--executable` — (upload-file) Set execute permission on Unix
+- `-o` / `--offset` N — (read-file) Byte offset to start from
+- `-l` / `--length` N — (read-file) Max bytes to return (default 65536)
+- `-a` / `--append` — (write-file) Append instead of overwrite
+- `-w` / `--workdir` DIR — (job-start) Directory the job runs in
+- `--clean-days` N — (job-list) Delete finished jobs whose exit marker is older than N days
 - `--no-overwrite` — (upload-file / download / download-file / download-script) Fail if the destination already exists
 - `--replace` — (update-server) Replace the complete config instead of recursively merging the patch
 
@@ -109,10 +120,23 @@ python cli.py my-server download-file /etc/myapp/app.log ./app.log
 
 # List root-owned scripts
 python cli.py my-server list-scripts -s
+
+# Read a log page by page (stderr prints the next offset)
+python cli.py my-server read-file /var/log/syslog -o 0 -l 4096
+# Write a config from stdin ($ and quotes stay literal)
+python cli.py my-server write-file /etc/profile.d/py.sh <<'EOF'
+export PATH=$HOME/.local/bin:$PATH
+EOF
+# Long-running work: start, poll, kill
+python cli.py my-server job-start "apt full-upgrade -y" -s
+python cli.py my-server job-status job-20261113-101500-ab12cd
+python cli.py my-server job-kill job-20261113-101500-ab12cd
+python cli.py my-server job-list --clean-days 7
 ```
 
 ## Notes
 
 - **sudo** — Use `run` with `sudo: true`, do not inline `sudo -S` in `run`
 - **Docker permissions** — If the user is not in the `docker` group, set `sudo: true` on the alias
+- **Background jobs** — `-t` on `job-start` bounds the JOB's lifetime (0 = unlimited), not the local wait. State lives on the remote under `jobs_dir` (default `scripts_dir/.jobs`) and survives MCP restarts. Bash servers only.
 - **Git-Bash paths** — remote POSIX paths pass through unchanged when invoked from Git-Bash; the CLI handles the MSYS argument rewrite itself (no `MSYS2_ARG_CONV_EXCL` workaround).

@@ -202,9 +202,14 @@ EXPECTED_STATIC_TOOL_NAMES = [
     "ssh_download",
     "ssh_download_file",
     "ssh_download_script",
+    "ssh_job_kill",
+    "ssh_job_list",
+    "ssh_job_start",
+    "ssh_job_status",
     "ssh_list_aliases",
     "ssh_list_scripts",
     "ssh_list_servers",
+    "ssh_read_file",
     "ssh_run",
     "ssh_run_alias",
     "ssh_run_script",
@@ -212,12 +217,13 @@ EXPECTED_STATIC_TOOL_NAMES = [
     "ssh_upload_all_scripts",
     "ssh_upload_file",
     "ssh_upload_script",
+    "ssh_write_file",
 ]
 
 
-def test_static_tools_has_16_expected_names():
+def test_static_tools_has_22_expected_names():
     assert sorted(STATIC_TOOLS) == EXPECTED_STATIC_TOOL_NAMES
-    assert len(STATIC_TOOLS) == 16
+    assert len(STATIC_TOOLS) == 22
 
 
 def test_static_tools_match_fresh_import():
@@ -234,7 +240,7 @@ def test_static_tools_match_fresh_import():
 def test_tool_specs_include_all_static_tools_with_handlers():
     specs = _tool_specs()
     assert set(STATIC_TOOLS) <= set(specs)
-    assert len(specs) >= 16
+    assert len(specs) >= 22
     for name, spec in specs.items():
         assert callable(spec.handler), name
 
@@ -500,6 +506,87 @@ def test_handle_delete_server_delegates_and_invalidates_alias_cache():
         mcp_server._handle_ssh_delete_server({"server": "s"})
     p.delete_server.assert_called_once_with("s")
     inv.assert_called_once_with()
+
+
+# ── Text-IO / job handler argument mapping (mocked connection) ───
+def test_handle_ssh_read_file_maps_args_and_paging_header():
+    conn = MagicMock()
+    conn.read_file.return_value = {
+        "stdout": "hello", "stderr": "", "code": 0,
+        "size": 100, "offset": 10, "next_offset": 15, "eof": False,
+    }
+    args = {"server": "demo", "remote_path": "/var/log/app.log",
+            "offset": 10, "max_bytes": 5, "sudo": True}
+    with patch("mcp_server._server_conn", return_value=conn):
+        result = mcp_server._handle_ssh_read_file(args)
+    conn.read_file.assert_called_once_with(
+        "/var/log/app.log", offset=10, max_bytes=5, sudo=True)
+    text = _text(result)
+    assert text.startswith("Tool: ssh_read_file\nServer: demo\n")
+    assert "Next offset: 15" in text and "EOF: False" in text
+    assert text.endswith("hello")
+
+
+def test_handle_ssh_write_file_maps_args():
+    conn = MagicMock()
+    conn.write_file.return_value = {
+        "stdout": "Wrote 5 bytes -> /etc/motd\n", "stderr": "", "code": 0,
+        "remote_path": "/etc/motd", "bytes": 5,
+    }
+    args = {"server": "demo", "remote_path": "/etc/motd", "content": "hello",
+            "append": True, "sudo": False}
+    with patch("mcp_server._server_conn", return_value=conn):
+        result = mcp_server._handle_ssh_write_file(args)
+    conn.write_file.assert_called_once_with(
+        "/etc/motd", "hello", append=True, sudo=False)
+    assert "Append: True" in _text(result)
+
+
+def test_handle_ssh_job_start_maps_args():
+    conn = MagicMock()
+    conn.job_start.return_value = {
+        "stdout": "Started job-x (pid 42)\n", "stderr": "", "code": 0,
+        "job_id": "job-x", "pid": "42",
+    }
+    args = {"server": "demo", "command": "apt upgrade -y", "name": "up",
+            "timeout": 600, "workdir": "/root", "sudo": True}
+    with patch("mcp_server._server_conn", return_value=conn):
+        result = mcp_server._handle_ssh_job_start(args)
+    conn.job_start.assert_called_once_with(
+        "apt upgrade -y", name="up", timeout=600, workdir="/root", sudo=True)
+    assert "Job id: job-x" in _text(result)
+
+
+def test_handle_ssh_job_status_returns_json():
+    conn = MagicMock()
+    conn.job_status.return_value = {"job_id": "job-x", "state": "exited",
+                                    "exit_code": "0", "stdout": "done",
+                                    "stderr": ""}
+    with patch("mcp_server._server_conn", return_value=conn):
+        result = mcp_server._handle_ssh_job_status(
+            {"server": "demo", "job_id": "job-x", "tail_lines": 50})
+    conn.job_status.assert_called_once_with("job-x", tail_lines=50)
+    payload = _json_payload(result)
+    assert payload["tool"] == "ssh_job_status"
+    assert payload["state"] == "exited" and payload["exit_code"] == "0"
+
+
+def test_handle_ssh_job_kill_and_list_delegate():
+    conn = MagicMock()
+    conn.job_kill.return_value = {"job_id": "job-x", "state": "killed",
+                                  "killed": True, "stdout": "ok\n",
+                                  "stderr": "", "code": 0}
+    conn.job_list.return_value = {"jobs": [{"id": "job-x"}], "count": 1,
+                                  "stdout": "", "stderr": "", "code": 0}
+    with patch("mcp_server._server_conn", return_value=conn):
+        killed = _json_payload(mcp_server._handle_ssh_job_kill(
+            {"server": "demo", "job_id": "job-x"}))
+        listed = _json_payload(mcp_server._handle_ssh_job_list(
+            {"server": "demo", "clean_days": 7, "sudo": False}))
+    assert killed["killed"] is True
+    conn.job_list.assert_called_once_with(clean_days=7, sudo=False)
+    assert listed == {"tool": "ssh_job_list", "server": "demo",
+                      "count": 1, "jobs": [{"id": "job-x"}]}
 
 
 # ── Live integration (offline: live_server fixture skips) ───────

@@ -61,6 +61,18 @@ pip install -r <skills-dir>/ssh-alias-mcp/requirements.txt
 
 将 `<skills-dir>` 替换为实际路径。Claude Code 全局安装路径为 `~/.claude/skills`；Codex 为 `~/.codex/skills`；OpenCode 为 `~/.opencode/skills`。
 
+### 可选：Streamable HTTP 端点
+
+不用 stdio 时，可以把同一套工具挂在 HTTP 后面（适合连远程 MCP 端点的客户端）：
+
+```bash
+python mcp_server.py --http --host 127.0.0.1 --port 8802 --token SECRET
+# 端点：POST http://127.0.0.1:8802/mcp
+```
+
+绑定到回环地址以外的网卡时必须提供 `--token`。该传输实现了会话（`Mcp-Session-Id`）、
+通知返回 202、POST 单条 JSON 响应；暂不支持服务端主动推送的 SSE 流。
+
 ## 4. 验证
 
 重启 AI Agent 后，确认 MCP 工具已加载：

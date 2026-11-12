@@ -39,6 +39,17 @@ Commands:
     <server> download <remote> <local>  Download a file or dir from remote (-p PATTERN)
     <server> download-file <remote> <local>  Download one remote file to an explicit path
     <server> download-script <name> <local>  Download a file from scripts_dir
+    <server> read-file <remote>     Read a remote TEXT file slice (-o BYTES
+                                    offset, -l MAX bytes; text only, use
+                                    download for binary)
+    <server> write-file <remote>    Write stdin text to a remote file (-a
+                                    to append; UTF-8, no shell quoting)
+    <server> job-start <cmd>        Run a command in the background; survives
+                                    timeouts and MCP restarts (bash servers;
+                                    '-' reads the command from stdin)
+    <server> job-status <id>        Job state + output tail (-n LINES)
+    <server> job-kill <id>          Terminate a running job (whole group)
+    <server> job-list               List jobs (--clean-days N drops old ones)
     <server> upload-all         Upload all scripts from alias definitions
     <server> list-scripts       List uploaded scripts on remote
     <server> list-aliases       List configured aliases (local, no SSH)
@@ -55,9 +66,15 @@ Common flags (work with ALL commands that connect to SSH):
 
 Per-command flags:
     -n, --name NAME       (upload) Custom script name on remote
+                          (job-status) Lines of job log to show
     -r, --run             (upload) Run script immediately after upload
     -p, --pattern PAT     (download) Regex pattern to filter filenames
     -x, --executable      (upload-file) Set execute permission on Unix
+    -o, --offset N        (read-file) Byte offset to start from
+    -l, --length N        (read-file) Max bytes to return
+    -a, --append          (write-file) Append instead of overwrite
+    -w, --workdir DIR     (job-start) Directory to run the job in
+    --clean-days N        (job-list) Delete finished jobs older than N days
     --no-overwrite        (upload-file/download/download-file/download-script)
                           Fail if the destination already exists
 
@@ -75,13 +92,21 @@ Examples:
     python cli.py my-server download /var/log/secure ./secure.log -s
     python cli.py my-server upload-file ./config.json /etc/myapp/config.json -s
     python cli.py my-server download-file /etc/myapp/app.log ./app.log --no-overwrite
+    python cli.py my-server read-file /var/log/app.log -o 12000 -l 4096
+    python cli.py my-server write-file /etc/motd -a < note.txt
+    python cli.py my-server job-start "apt full-upgrade -y" -s
+    python cli.py my-server job-status job-20261113-101500-ab12cd
+    python cli.py my-server job-list --clean-days 7
     python cli.py my-server list-scripts -s     # list root-owned scripts dir
 """
 
 # All per-server flags flow through the single tail-consumer in main().
 # Flags buried in the command payload are never consumed.
-_BOOL_FLAGS = {"-s", "--sudo", "-r", "--run", "--no-overwrite", "-x", "--executable"}
-_OPT_FLAGS = {"-t", "--timeout", "-n", "--name", "-p", "--pattern"}
+_BOOL_FLAGS = {"-s", "--sudo", "-r", "--run", "--no-overwrite", "-x", "--executable",
+               "-a", "--append"}
+_OPT_FLAGS = {"-t", "--timeout", "-n", "--name", "-p", "--pattern",
+              "-o", "--offset", "-l", "--length", "-w", "--workdir",
+              "--clean-days"}
 
 
 def _extract_flag(args: list, *flags) -> bool:
@@ -261,6 +286,72 @@ def _dispatch(first: str, rest: list):
             executable=("-x" in flags) or ("--executable" in flags),
         )
         sys.exit(_write_result(result))
+
+    elif cmd == "read-file" and len(payload) == 1:
+        result = conn.read_file(
+            payload[0],
+            offset=int(_flag_value(flags, "-o", "--offset") or 0),
+            max_bytes=int(_flag_value(flags, "-l", "--length") or 65536),
+            sudo=sudo,
+        )
+        sys.stdout.write(result["stdout"])
+        if not result["eof"]:
+            print(f"\n[partial: bytes {result['offset']}-{result['next_offset']} "
+                  f"of {result['size']}; continue with -o {result['next_offset']}]",
+                  file=sys.stderr)
+        return
+
+    elif cmd == "write-file" and len(payload) == 1:
+        # Content always comes from stdin (like `run -`), so quotes, $ and
+        # newlines can never be mangled by the local shell.
+        result = conn.write_file(
+            payload[0], sys.stdin.read(),
+            append=("-a" in flags) or ("--append" in flags),
+            sudo=sudo,
+        )
+        sys.exit(_write_result(result))
+
+    elif cmd == "job-start" and payload:
+        if payload == ["-"]:
+            command = sys.stdin.read()
+            if not command.strip():
+                print("Empty command read from stdin", file=sys.stderr)
+                sys.exit(2)
+        elif "-" in payload:
+            print("'-' must be the only command argument "
+                  "(reads the whole command from stdin)", file=sys.stderr)
+            sys.exit(2)
+        else:
+            command = " ".join(payload)
+        # -t bounds the JOB's lifetime here (0 = runs until it finishes),
+        # not the local wait like other commands.
+        result = conn.job_start(
+            command,
+            name=_flag_value(flags, "-n", "--name"),
+            timeout=int(_flag_value(flags, "-t", "--timeout") or 0),
+            workdir=_flag_value(flags, "-w", "--workdir"),
+            sudo=sudo,
+        )
+        print(_safe_json({"job_id": result["job_id"], "pid": result["pid"]}))
+        return
+
+    elif cmd == "job-status" and len(payload) == 1:
+        print(_safe_json(conn.job_status(
+            payload[0],
+            tail_lines=int(_flag_value(flags, "-n", "--name") or 100))))
+        return
+
+    elif cmd == "job-kill" and len(payload) == 1:
+        print(_safe_json(conn.job_kill(payload[0])))
+        return
+
+    elif cmd == "job-list":
+        listed = conn.job_list(
+            clean_days=int(_flag_value(flags, "--clean-days") or 0),
+            sudo=sudo,
+        )
+        print(_safe_json({"count": listed["count"], "jobs": listed["jobs"]}))
+        return
 
     elif cmd == "upload-all":
         sys.exit(_write_result(conn.upload_all_scripts(sudo=sudo)))
