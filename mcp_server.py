@@ -339,85 +339,50 @@ def _timeout_field(requested, effective) -> tuple:
     ))
 
 
-def _handle_ssh_run(args: dict) -> dict:
-    effective_timeout = _mcp_safe_timeout(args["timeout"])
-    return _with_execution_summary(
-        _server_conn(args).run(
-            args["command"],
-            timeout=effective_timeout,
-            sudo=args["sudo"],
-        ),
-        _execution_summary("ssh_run", args["server"], [
-            ("Command", args["command"]),
-            _timeout_field(args["timeout"], effective_timeout),
-            ("Sudo", args["sudo"]),
-        ]),
-    )
+def _passthrough(tool_name: str, method: str, *call_args: str,
+                 summary=(), json_output: bool = False):
+    """Handler factory for the "one connection method + standard summary" shape.
 
-
-def _handle_ssh_run_script(args: dict) -> dict:
-    effective_timeout = _mcp_safe_timeout(args["timeout"])
-    return _with_execution_summary(
-        _server_conn(args).run_script(
-            args["script_name"],
-            timeout=effective_timeout,
-            sudo=args["sudo"],
-        ),
-        _execution_summary("ssh_run_script", args["server"], [
-            ("Script", args["script_name"]),
-            _timeout_field(args["timeout"], effective_timeout),
-            ("Sudo", args["sudo"]),
-        ]),
-    )
-
-
-def _handle_ssh_upload_script(args: dict) -> dict:
-    effective_timeout = _mcp_safe_timeout(args["timeout"])
-    return _with_execution_summary(
-        _server_conn(args).upload_script(
-            args["local_path"],
-            args["script_name"],
-            args["run_immediately"],
-            effective_timeout,
-            args["overwrite"],
-            args["sudo"],
-        ),
-        _execution_summary("ssh_upload_script", args["server"], [
-            ("Local path", args["local_path"]),
-            ("Script name", args["script_name"] or '(same as local filename)'),
-            ("Run immediately", args["run_immediately"]),
-            _timeout_field(args["timeout"], effective_timeout),
-            ("Overwrite", args["overwrite"]),
-            ("Sudo", args["sudo"]),
-        ]),
-    )
-
-
-def _handle_ssh_upload_file(args: dict) -> dict:
-    effective_timeout = _mcp_safe_timeout(args["timeout"])
-    return _with_execution_summary(
-        _server_conn(args).upload_file(
-            args["local_path"], args["remote_path"], effective_timeout,
-            args["overwrite"], args["sudo"], args["executable"],
-        ),
-        _execution_summary("ssh_upload_file", args["server"], [
-            ("Local path", args["local_path"]),
-            ("Remote path", args["remote_path"]),
-            _timeout_field(args["timeout"], effective_timeout),
-            ("Overwrite", args["overwrite"]),
-            ("Sudo", args["sudo"]),
-            ("Executable", args["executable"]),
-        ]),
-    )
-
-
-def _handle_ssh_list_scripts(args: dict) -> dict:
-    return _with_execution_summary(
-        _server_conn(args).list_scripts(sudo=args["sudo"]),
-        _execution_summary("ssh_list_scripts", args["server"], [
-            ("Sudo", args["sudo"]),
-        ]),
-    )
+    ``call_args`` are argument names passed positionally to the connection
+    method, in the method's signature order; a ``timeout`` entry is clamped
+    to the MCP request lifetime and auto-annotated in the summary.
+    ``summary`` items are ``(label, key)`` or ``(label, key, placeholder)``
+    where key reads the call args, a computed result field via
+    ``result:<key>``, or the clamping annotation via ``@timeout``.
+    """
+    def handler(args: dict) -> dict:
+        conn = _server_conn(args)
+        positional = []
+        requested_timeout = None
+        effective_timeout = None
+        for name in call_args:
+            value = args[name]
+            if name == "timeout":
+                requested_timeout = value
+                value = effective_timeout = _mcp_safe_timeout(value)
+            positional.append(value)
+        result = getattr(conn, method)(*positional)
+        if json_output:
+            return _json_text({"tool": tool_name, "server": args["server"],
+                               **result})
+        lines = [f"Tool: {tool_name}", f"Server: {args['server']}"]
+        for item in summary:
+            label, key = item[0], item[1]
+            if key == "@timeout":
+                lines.append("Timeout: " + _timeout_field(
+                    requested_timeout, effective_timeout)[1])
+            elif key.startswith("result:"):
+                # key[7:] strips the literal "result:" prefix (7 chars);
+                # a slice inside the f-string would confuse the ':' parser.
+                field = key[7:]
+                lines.append(f"{label}: {result[field]}")
+            else:
+                value = args[key]
+                if (value is None or value == "") and len(item) > 2:
+                    value = item[2]
+                lines.append(f"{label}: {value}")
+        return _with_execution_summary(result, lines)
+    return handler
 
 
 def _handle_ssh_list_servers(args: dict) -> dict:
@@ -447,100 +412,6 @@ def _handle_ssh_delete_server(args: dict) -> dict:
     result = pool.delete_server(args["server"])
     invalidate_alias_tool_specs()
     return _json_text(result)
-
-
-def _handle_ssh_download(args: dict) -> dict:
-    effective_timeout = _mcp_safe_timeout(args["timeout"])
-    return _with_execution_summary(
-        _server_conn(args).download(
-            args["remote_path"],
-            args["local_path"],
-            timeout=effective_timeout,
-            pattern=args["pattern"],
-            overwrite=args["overwrite"],
-            sudo=args["sudo"],
-        ),
-        _execution_summary("ssh_download", args["server"], [
-            ("Remote path", args["remote_path"]),
-            ("Local path", args["local_path"]),
-            ("Pattern", args["pattern"] or '(none)'),
-            _timeout_field(args["timeout"], effective_timeout),
-            ("Overwrite", args["overwrite"]),
-            ("Sudo", args["sudo"]),
-        ]),
-    )
-
-
-def _handle_ssh_download_file(args: dict) -> dict:
-    effective_timeout = _mcp_safe_timeout(args["timeout"])
-    return _with_execution_summary(
-        _server_conn(args).download_file(
-            args["remote_path"], args["local_path"], effective_timeout,
-            args["overwrite"], args["sudo"],
-        ),
-        _execution_summary("ssh_download_file", args["server"], [
-            ("Remote path", args["remote_path"]),
-            ("Local path", args["local_path"]),
-            _timeout_field(args["timeout"], effective_timeout),
-            ("Overwrite", args["overwrite"]),
-            ("Sudo", args["sudo"]),
-        ]),
-    )
-
-
-def _handle_ssh_download_script(args: dict) -> dict:
-    effective_timeout = _mcp_safe_timeout(args["timeout"])
-    return _with_execution_summary(
-        _server_conn(args).download_script(
-            args["script_name"], args["local_path"], effective_timeout,
-            args["overwrite"], args["sudo"],
-        ),
-        _execution_summary("ssh_download_script", args["server"], [
-            ("Script", args["script_name"]),
-            ("Local path", args["local_path"]),
-            _timeout_field(args["timeout"], effective_timeout),
-            ("Overwrite", args["overwrite"]),
-            ("Sudo", args["sudo"]),
-        ]),
-    )
-
-
-def _handle_ssh_read_file(args: dict) -> dict:
-    result = _server_conn(args).read_file(
-        args["remote_path"],
-        offset=int(args["offset"] or 0),
-        max_bytes=int(args["max_bytes"] or 65536),
-        sudo=args["sudo"],
-    )
-    return _with_execution_summary(
-        result,
-        _execution_summary("ssh_read_file", args["server"], [
-            ("Remote path", args["remote_path"]),
-            ("Offset", result["offset"]),
-            ("Size", result["size"]),
-            ("Next offset", result["next_offset"]),
-            ("EOF", result["eof"]),
-            ("Sudo", args["sudo"]),
-        ]),
-    )
-
-
-def _handle_ssh_write_file(args: dict) -> dict:
-    result = _server_conn(args).write_file(
-        args["remote_path"],
-        args["content"],
-        append=args["append"],
-        sudo=args["sudo"],
-    )
-    return _with_execution_summary(
-        result,
-        _execution_summary("ssh_write_file", args["server"], [
-            ("Remote path", args["remote_path"]),
-            ("Bytes", result["bytes"]),
-            ("Append", args["append"]),
-            ("Sudo", args["sudo"]),
-        ]),
-    )
 
 
 def _handle_ssh_job_start(args: dict) -> dict:
@@ -582,15 +453,6 @@ def _handle_ssh_job_list(args: dict) -> dict:
         clean_days=int(args["clean_days"] or 0), sudo=args["sudo"])
     return _json_text({"tool": "ssh_job_list", "server": args["server"],
                        "count": result["count"], "jobs": result["jobs"]})
-
-
-def _handle_ssh_upload_all_scripts(args: dict) -> dict:
-    return _with_execution_summary(
-        _server_conn(args).upload_all_scripts(sudo=args["sudo"]),
-        _execution_summary("ssh_upload_all_scripts", args["server"], [
-            ("Sudo", args["sudo"]),
-        ]),
-    )
 
 
 def _handle_ssh_run_alias(args: dict) -> dict:
@@ -722,7 +584,10 @@ STATIC_TOOLS = {
             SUDO_ARG,
         ),
         annotations={"readOnlyHint": False, "destructiveHint": True},
-        handler=_handle_ssh_run,
+        handler=_passthrough("ssh_run", "run", "command", "timeout", "sudo",
+                             summary=(("Command", "command"),
+                                      ("Timeout", "@timeout"),
+                                      ("Sudo", "sudo"))),
     ),
     "ssh_upload_script": ToolSpec(
         name="ssh_upload_script",
@@ -738,7 +603,15 @@ STATIC_TOOLS = {
             SUDO_ARG,
         ),
         annotations={"readOnlyHint": False, "destructiveHint": False},
-        handler=_handle_ssh_upload_script,
+        handler=_passthrough("ssh_upload_script", "upload_script",
+                             "local_path", "script_name", "run_immediately",
+                             "timeout", "overwrite", "sudo",
+                             summary=(("Local path", "local_path"),
+                                      ("Script name", "script_name", "(same as local filename)"),
+                                      ("Run immediately", "run_immediately"),
+                                      ("Timeout", "@timeout"),
+                                      ("Overwrite", "overwrite"),
+                                      ("Sudo", "sudo"))),
     ),
     "ssh_upload_file": ToolSpec(
         name="ssh_upload_file",
@@ -754,7 +627,15 @@ STATIC_TOOLS = {
             _arg("executable", "boolean", "Set execute permission on Unix", default=False),
         ),
         annotations={"readOnlyHint": False, "destructiveHint": False},
-        handler=_handle_ssh_upload_file,
+        handler=_passthrough("ssh_upload_file", "upload_file",
+                             "local_path", "remote_path", "timeout",
+                             "overwrite", "sudo", "executable",
+                             summary=(("Local path", "local_path"),
+                                      ("Remote path", "remote_path"),
+                                      ("Timeout", "@timeout"),
+                                      ("Overwrite", "overwrite"),
+                                      ("Sudo", "sudo"),
+                                      ("Executable", "executable"))),
     ),
     "ssh_run_script": ToolSpec(
         name="ssh_run_script",
@@ -767,7 +648,11 @@ STATIC_TOOLS = {
             _arg("sudo", "boolean", "Run as root", default=False),
         ),
         annotations={"readOnlyHint": False, "destructiveHint": False},
-        handler=_handle_ssh_run_script,
+        handler=_passthrough("ssh_run_script", "run_script",
+                             "script_name", "timeout", "sudo",
+                             summary=(("Script", "script_name"),
+                                      ("Timeout", "@timeout"),
+                                      ("Sudo", "sudo"))),
     ),
     "ssh_list_scripts": ToolSpec(
         name="ssh_list_scripts",
@@ -775,7 +660,8 @@ STATIC_TOOLS = {
         description="List uploaded scripts on the remote server.",
         args=(SERVER_ARG, _arg("sudo", "boolean", "List as root", default=False)),
         annotations={"readOnlyHint": True},
-        handler=_handle_ssh_list_scripts,
+        handler=_passthrough("ssh_list_scripts", "list_scripts", "sudo",
+                             summary=(("Sudo", "sudo"),)),
     ),
     "ssh_read_file": ToolSpec(
         name="ssh_read_file",
@@ -793,7 +679,14 @@ STATIC_TOOLS = {
             _arg("sudo", "boolean", "Read root-owned files via sudo stage", default=False),
         ),
         annotations={"readOnlyHint": True},
-        handler=_handle_ssh_read_file,
+        handler=_passthrough("ssh_read_file", "read_file",
+                             "remote_path", "offset", "max_bytes", "sudo",
+                             summary=(("Remote path", "remote_path"),
+                                      ("Offset", "result:offset"),
+                                      ("Size", "result:size"),
+                                      ("Next offset", "result:next_offset"),
+                                      ("EOF", "result:eof"),
+                                      ("Sudo", "sudo"))),
     ),
     "ssh_write_file": ToolSpec(
         name="ssh_write_file",
@@ -810,7 +703,12 @@ STATIC_TOOLS = {
             _arg("sudo", "boolean", "Write as root via sudo stage", default=False),
         ),
         annotations={"readOnlyHint": False, "destructiveHint": False},
-        handler=_handle_ssh_write_file,
+        handler=_passthrough("ssh_write_file", "write_file",
+                             "remote_path", "content", "append", "sudo",
+                             summary=(("Remote path", "remote_path"),
+                                      ("Bytes", "result:bytes"),
+                                      ("Append", "append"),
+                                      ("Sudo", "sudo"))),
     ),
     "ssh_job_start": ToolSpec(
         name="ssh_job_start",
@@ -894,7 +792,15 @@ STATIC_TOOLS = {
             _arg("sudo", "boolean", "Read root-owned files via sudo stage", default=False),
         ),
         annotations={"readOnlyHint": False, "destructiveHint": False},
-        handler=_handle_ssh_download,
+        handler=_passthrough("ssh_download", "download",
+                             "remote_path", "local_path", "timeout",
+                             "pattern", "overwrite", "sudo",
+                             summary=(("Remote path", "remote_path"),
+                                      ("Local path", "local_path"),
+                                      ("Pattern", "pattern", "(none)"),
+                                      ("Timeout", "@timeout"),
+                                      ("Overwrite", "overwrite"),
+                                      ("Sudo", "sudo"))),
     ),
     "ssh_download_file": ToolSpec(
         name="ssh_download_file",
@@ -909,7 +815,14 @@ STATIC_TOOLS = {
             SUDO_ARG,
         ),
         annotations={"readOnlyHint": False, "destructiveHint": False},
-        handler=_handle_ssh_download_file,
+        handler=_passthrough("ssh_download_file", "download_file",
+                             "remote_path", "local_path", "timeout",
+                             "overwrite", "sudo",
+                             summary=(("Remote path", "remote_path"),
+                                      ("Local path", "local_path"),
+                                      ("Timeout", "@timeout"),
+                                      ("Overwrite", "overwrite"),
+                                      ("Sudo", "sudo"))),
     ),
     "ssh_download_script": ToolSpec(
         name="ssh_download_script",
@@ -924,7 +837,14 @@ STATIC_TOOLS = {
             _arg("sudo", "boolean", "Read as root via sudo stage", default=False),
         ),
         annotations={"readOnlyHint": False, "destructiveHint": False},
-        handler=_handle_ssh_download_script,
+        handler=_passthrough("ssh_download_script", "download_script",
+                             "script_name", "local_path", "timeout",
+                             "overwrite", "sudo",
+                             summary=(("Script", "script_name"),
+                                      ("Local path", "local_path"),
+                                      ("Timeout", "@timeout"),
+                                      ("Overwrite", "overwrite"),
+                                      ("Sudo", "sudo"))),
     ),
     "ssh_upload_all_scripts": ToolSpec(
         name="ssh_upload_all_scripts",
@@ -932,7 +852,9 @@ STATIC_TOOLS = {
         description="Upload all scripts referenced by alias definitions.",
         args=(SERVER_ARG, _arg("sudo", "boolean", "Install as root", default=False)),
         annotations={"readOnlyHint": False, "destructiveHint": False},
-        handler=_handle_ssh_upload_all_scripts,
+        handler=_passthrough("ssh_upload_all_scripts", "upload_all_scripts",
+                             "sudo",
+                             summary=(("Sudo", "sudo"),)),
     ),
     "ssh_run_alias": ToolSpec(
         name="ssh_run_alias",

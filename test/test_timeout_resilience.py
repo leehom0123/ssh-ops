@@ -140,8 +140,8 @@ def test_pool_get_returns_one_connection_per_server():
     cfg = {"server": {"host": "h", "user": "u"}}
     with patch.object(pool, "_resolve_config_path", lambda key: "x.yml"), \
             patch.object(pool, "_load_config", lambda key: cfg), \
-            patch.object(ssh_client, "SSHConnection",
-                         side_effect=lambda *a, **k: built.append(1) or object()):
+            patch("ssh_client.pool.SSHConnection",
+                  side_effect=lambda *a, **k: built.append(1) or object()):
         threads = [threading.Thread(target=pool.get, args=("srv",)) for _ in range(6)]
         for t in threads:
             t.start()
@@ -223,7 +223,7 @@ def test_whitelist_requires_full_command_match():
 def test_global_security_section_is_loaded():
     fake_cfg = {"security": {"blacklist": ["rm -rf"], "whitelist": [],
                              "command_template": ""}}
-    with patch.object(ssh_client, "global_config", fake_cfg):
+    with patch.object(ssh_client.config, "global_config", fake_cfg):
         conn = _conn()
     with pytest.raises(ValueError):
         conn._check_command("sudo rm -rf /")
@@ -264,7 +264,7 @@ def test_host_key_trusted_on_first_use_and_mismatch_rejected():
     conn = _conn()
     with tempfile.TemporaryDirectory() as tmp:
         kh = Path(tmp) / "known_hosts"
-        with patch.object(ssh_client, "KNOWN_HOSTS_PATH", kh):
+        with patch.object(ssh_client.config, "KNOWN_HOSTS_PATH", kh):
             key1 = paramiko.RSAKey.generate(1024)
             conn._check_or_record_host_key(key1)  # tofu: records
             assert kh.exists()
@@ -278,7 +278,7 @@ def test_strict_mode_rejects_unknown_host_key():
     conn = _conn(host_key_checking="strict")
     with tempfile.TemporaryDirectory() as tmp:
         kh = Path(tmp) / "known_hosts"
-        with patch.object(ssh_client, "KNOWN_HOSTS_PATH", kh):
+        with patch.object(ssh_client.config, "KNOWN_HOSTS_PATH", kh):
             with pytest.raises(paramiko.SSHException):
                 conn._check_or_record_host_key(paramiko.RSAKey.generate(1024))
 

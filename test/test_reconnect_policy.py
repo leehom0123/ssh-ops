@@ -68,7 +68,7 @@ def test_auto_reconnect_false_disables_background_attempts():
 
 
 def test_global_auto_reconnect_and_interval_are_inherited():
-    with patch.object(ssh_client, "global_config", {
+    with patch.object(ssh_client.config, "global_config", {
         "server": {
             "auto_reconnect": False,
             "reconnect_interval": 17,

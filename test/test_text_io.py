@@ -41,7 +41,7 @@ def _fake_sftp(stat_size=100, read_data=b"hello", stat_raises=False):
 def test_read_file_returns_slice_and_paging_metadata():
     conn = _conn()
     sftp = _fake_sftp(stat_size=100, read_data=b"hello")
-    with patch("ssh_client.paramiko.SFTPClient") as cls:
+    with patch("paramiko.SFTPClient") as cls:
         cls.from_transport.return_value = sftp
         result = conn.read_file("/var/log/app.log", offset=10, max_bytes=5)
     sftp.open.return_value.__enter__.return_value.seek.assert_called_with(10)
@@ -53,7 +53,7 @@ def test_read_file_returns_slice_and_paging_metadata():
 def test_read_file_eof_at_end():
     conn = _conn()
     sftp = _fake_sftp(stat_size=5, read_data=b"hello")
-    with patch("ssh_client.paramiko.SFTPClient") as cls:
+    with patch("paramiko.SFTPClient") as cls:
         cls.from_transport.return_value = sftp
         result = conn.read_file("/f")
     assert result["eof"] is True and result["next_offset"] == 5
@@ -62,7 +62,7 @@ def test_read_file_eof_at_end():
 def test_read_file_rejects_binary():
     conn = _conn()
     sftp = _fake_sftp(stat_size=8, read_data=b"a\x00b")
-    with patch("ssh_client.paramiko.SFTPClient") as cls:
+    with patch("paramiko.SFTPClient") as cls:
         cls.from_transport.return_value = sftp
         with pytest.raises(ValueError, match="Binary content"):
             conn.read_file("/f")
@@ -71,7 +71,7 @@ def test_read_file_rejects_binary():
 def test_read_file_rejects_non_utf8_at_eof():
     conn = _conn()
     sftp = _fake_sftp(stat_size=2, read_data=b"\xff\xfe")
-    with patch("ssh_client.paramiko.SFTPClient") as cls:
+    with patch("paramiko.SFTPClient") as cls:
         cls.from_transport.return_value = sftp
         with pytest.raises(ValueError, match="not valid UTF-8"):
             conn.read_file("/f")
@@ -82,7 +82,7 @@ def test_read_file_ignores_ragged_tail_when_truncated():
     # of rejecting the whole (textual) file.
     conn = _conn()
     sftp = _fake_sftp(stat_size=100, read_data="中a".encode()[:-1])
-    with patch("ssh_client.paramiko.SFTPClient") as cls:
+    with patch("paramiko.SFTPClient") as cls:
         cls.from_transport.return_value = sftp
         result = conn.read_file("/f")
     assert result["stdout"] == "中" and result["eof"] is False
@@ -91,7 +91,7 @@ def test_read_file_ignores_ragged_tail_when_truncated():
 def test_read_file_caps_max_bytes():
     conn = _conn()
     sftp = _fake_sftp()
-    with patch("ssh_client.paramiko.SFTPClient") as cls:
+    with patch("paramiko.SFTPClient") as cls:
         cls.from_transport.return_value = sftp
         conn.read_file("/f", max_bytes=10 ** 9)
     sftp.open.return_value.__enter__.return_value.read.assert_called_with(
@@ -108,7 +108,7 @@ def test_read_file_respects_remote_allow_list():
 def test_read_file_sudo_stages_via_tmp():
     conn = _conn({"sudo_password": "pw"})
     sftp = _fake_sftp()
-    with patch("ssh_client.paramiko.SFTPClient") as cls:
+    with patch("paramiko.SFTPClient") as cls:
         cls.from_transport.return_value = sftp
         conn.read_file("/root/secret", sudo=True)
     cmds = [c.args[0] for c in conn.run.call_args_list]
@@ -123,7 +123,7 @@ def test_read_file_sudo_stages_via_tmp():
 def test_write_file_creates_with_open_mode_and_chmod():
     conn = _conn()
     sftp = _fake_sftp(stat_raises=True)
-    with patch("ssh_client.paramiko.SFTPClient") as cls:
+    with patch("paramiko.SFTPClient") as cls:
         cls.from_transport.return_value = sftp
         result = conn.write_file("/srv/new.conf", "cfg=1")
     sftp.open.assert_called_once_with("/srv/new.conf", "wb")
@@ -135,7 +135,7 @@ def test_write_file_overwrite_keeps_existing_mode():
     conn = _conn()
     sftp = _fake_sftp(stat_size=1)  # stat succeeds -> file existed
     fh = sftp.open.return_value.__enter__.return_value
-    with patch("ssh_client.paramiko.SFTPClient") as cls:
+    with patch("paramiko.SFTPClient") as cls:
         cls.from_transport.return_value = sftp
         conn.write_file("/srv/old.conf", "x")
     fh.write.assert_called_once_with(b"x")
@@ -145,7 +145,7 @@ def test_write_file_overwrite_keeps_existing_mode():
 def test_write_file_append_uses_append_mode():
     conn = _conn()
     sftp = _fake_sftp(stat_size=1)
-    with patch("ssh_client.paramiko.SFTPClient") as cls:
+    with patch("paramiko.SFTPClient") as cls:
         cls.from_transport.return_value = sftp
         conn.write_file("/srv/log", "more", append=True)
     sftp.open.assert_called_once_with("/srv/log", "ab")

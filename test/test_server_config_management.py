@@ -17,7 +17,7 @@ def servers_dir(tmp_path, monkeypatch):
     """Point ssh_client.SERVERS_DIR at an empty temp directory."""
     dir_path = tmp_path / "servers"
     dir_path.mkdir()
-    monkeypatch.setattr(ssh_client, "SERVERS_DIR", dir_path)
+    monkeypatch.setattr("ssh_client.config.SERVERS_DIR", dir_path)
     return dir_path
 
 
