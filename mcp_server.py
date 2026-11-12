@@ -1240,45 +1240,32 @@ def _process_line(line: str):
 
 
 def _parse_launch_args(argv):
-    """Split launch args into (http_config, help_requested).
-
-    http_config is None for stdio mode, else a dict for _serve_http().
-    """
-    config = {"host": "127.0.0.1", "port": 8802, "path": "/mcp", "token": None}
-    enabled = False
-    help_requested = False
-    i = 0
-    while i < len(argv):
-        arg = argv[i]
-        if arg == "--http":
-            enabled = True
-        elif arg in ("-h", "--help"):
-            help_requested = True
-        elif arg in ("--host", "--port", "--path", "--token"):
-            if i + 1 >= len(argv):
-                raise SystemExit(f"Missing value for {arg}")
-            value = argv[i + 1]
-            if arg == "--port":
-                try:
-                    config["port"] = int(value)
-                except ValueError:
-                    raise SystemExit(f"Invalid --port: {value}")
-            else:
-                key = arg[2:]
-                config[key] = value
-            i += 1
-        else:
-            raise SystemExit(f"Unknown argument: {arg}\n\n{HTTP_HELP}")
-        i += 1
-    return (config if enabled else None), help_requested
+    """Parse launch args into an http_config dict, or None for stdio."""
+    import argparse
+    parser = argparse.ArgumentParser(
+        prog="mcp_server.py",
+        description="ssh-alias-mcp MCP server (stdio by default).",
+        epilog=HTTP_HELP)
+    parser.add_argument("--http", action="store_true",
+                        help="serve Streamable HTTP instead of stdio")
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="HTTP bind address (default 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=8802,
+                        help="HTTP port (default 8802)")
+    parser.add_argument("--path", default="/mcp",
+                        help="HTTP endpoint path (default /mcp)")
+    parser.add_argument("--token", default=None,
+                        help="require 'Authorization: Bearer <token>'; "
+                             "mandatory when binding beyond loopback")
+    ns = parser.parse_args(argv)
+    config = {"host": ns.host, "port": ns.port, "path": ns.path,
+              "token": ns.token}
+    return config if ns.http else None
 
 
 def main():
     """MCP entry point — stdio by default, Streamable HTTP with --http."""
-    http_config, help_requested = _parse_launch_args(sys.argv[1:])
-    if help_requested:
-        print(HTTP_HELP)
-        sys.exit(0)
+    http_config = _parse_launch_args(sys.argv[1:])
     if http_config:
         _serve_http(**http_config)
         return

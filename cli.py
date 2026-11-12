@@ -182,6 +182,21 @@ def _write_result(result: dict) -> int:
     return result.get("code", 1)
 
 
+def _command_payload(payload: list) -> str:
+    """Join positional args into a command, or read it from stdin for '-'."""
+    if payload == ["-"]:
+        command = sys.stdin.read()
+        if not command.strip():
+            print("Empty command read from stdin", file=sys.stderr)
+            sys.exit(2)
+        return command
+    if "-" in payload:
+        print("'-' must be the only command argument "
+              "(reads the whole command from stdin)", file=sys.stderr)
+        sys.exit(2)
+    return " ".join(payload)
+
+
 def _dispatch(first: str, rest: list):
     # list-servers
     if first == "list-servers":
@@ -239,25 +254,9 @@ def _dispatch(first: str, rest: list):
     overwrite = not _flag_value(flags, "--no-overwrite")
 
     if cmd == "run" and payload:
-        if payload == ["-"]:
-            # Read the command from stdin instead of argv. Lets callers pass
-            # $/quote-heavy payloads (awk/sed one-liners) without the local
-            # shell mangling them — pipe or use a QUOTED heredoc:
-            #   cli.py srv run - <<'EOF'
-            #   awk 'match($0,/x/){print}' file
-            #   EOF
-            command = sys.stdin.read()
-            if not command.strip():
-                print("Empty command read from stdin", file=sys.stderr)
-                sys.exit(2)
-        elif "-" in payload:
-            print("'-' must be the only command argument "
-                  "(reads the whole command from stdin)", file=sys.stderr)
-            sys.exit(2)
-        else:
-            command = " ".join(payload)
         result = conn.run(
-            command, timeout=timeout, sudo=sudo, stream_cb=_stream_chunk,
+            _command_payload(payload), timeout=timeout, sudo=sudo,
+            stream_cb=_stream_chunk,
         )
         sys.exit(result.get("code", 1))
 
@@ -312,21 +311,10 @@ def _dispatch(first: str, rest: list):
         sys.exit(_write_result(result))
 
     elif cmd == "job-start" and payload:
-        if payload == ["-"]:
-            command = sys.stdin.read()
-            if not command.strip():
-                print("Empty command read from stdin", file=sys.stderr)
-                sys.exit(2)
-        elif "-" in payload:
-            print("'-' must be the only command argument "
-                  "(reads the whole command from stdin)", file=sys.stderr)
-            sys.exit(2)
-        else:
-            command = " ".join(payload)
         # -t bounds the JOB's lifetime here (0 = runs until it finishes),
         # not the local wait like other commands.
         result = conn.job_start(
-            command,
+            _command_payload(payload),
             name=_flag_value(flags, "-n", "--name"),
             timeout=int(_flag_value(flags, "-t", "--timeout") or 0),
             workdir=_flag_value(flags, "-w", "--workdir"),

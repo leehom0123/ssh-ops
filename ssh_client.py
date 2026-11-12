@@ -1216,24 +1216,8 @@ class SSHConnection:
         data = content.encode("utf-8")
 
         if not sudo:
-            self.run(self._cmd("mkdir", path=posixpath.dirname(remote_path)),
-                     timeout=10, internal=True)
-            sftp = self._sftp(timeout=self.timeout)
-            try:
-                try:
-                    existed = True
-                    sftp.stat(remote_path)
-                except IOError:
-                    existed = False
-                with sftp.open(remote_path, "ab" if append else "wb") as fh:
-                    fh.write(data)
-                if not existed:
-                    try:
-                        sftp.chmod(remote_path, 0o644)
-                    except IOError:
-                        pass  # e.g. Windows SFTP servers without chmod
-            finally:
-                sftp.close()
+            self._remote_put_bytes(remote_path, data, mode=0o644,
+                                   append=append)
             return {
                 "stdout": f"Wrote {len(data)} bytes -> {remote_path}\n",
                 "stderr": "", "code": 0,
@@ -1269,26 +1253,29 @@ class SSHConnection:
             raise ValueError(f"Invalid job id: {job_id!r}")
         return f"{self.jobs_dir}/{job_id}"
 
-    def _job_shell_state(self, job_dir_q: str, job_id: str, sudo: bool) -> dict:
-        """Resolve one job's {state, exit_code, pid} from remote markers.
+    # POSIX sh function resolving a job dir to "state|exit_code|pid".
+    # Shared by job_status/job_kill (_job_shell_state) and job_list so the
+    # rules — and their bugs — can never drift apart. A live pid only
+    # counts as running when its command line mentions the job id: pids
+    # get reused, and a recycled pid must not pin a dead job in 'running'.
+    _JOB_STATE_FN = (
+        "job_state() { J=\"$1\"; ID=\"$2\"; state='lost'; code=''; "
+        "pid=$(cat \"$J/pid\" 2>/dev/null); "
+        "if [ -f \"$J/exit\" ]; then state='exited'; code=$(cat \"$J/exit\"); "
+        "elif [ -n \"$pid\" ] && kill -0 \"$pid\" 2>/dev/null; then "
+        "if tr '\\0' ' ' < \"/proc/$pid/cmdline\" 2>/dev/null | grep -q -- \"$ID\"; "
+        "then state='running'; "
+        "elif ps -o args= -p \"$pid\" 2>/dev/null | grep -q -- \"$ID\"; "
+        "then state='running'; fi; "
+        "elif [ -f \"$J/killed\" ]; then state='killed'; fi; "
+        "echo \"$state|$code|$pid\"; }"
+    )
 
-        A live pid only counts as running when its command line mentions
-        the job id: pids get reused, and a stale pid must not keep a dead
-        job in 'running' forever.
-        """
-        script = (
-            f"J={job_dir_q}; ID={shlex.quote(job_id)}; "
-            "state='lost'; code=''; pid=$(cat \"$J/pid\" 2>/dev/null); "
-            "if [ -f \"$J/exit\" ]; then state='exited'; code=$(cat \"$J/exit\"); "
-            "elif [ -n \"$pid\" ] && kill -0 \"$pid\" 2>/dev/null; then "
-            "if tr '\\0' ' ' < \"/proc/$pid/cmdline\" 2>/dev/null | grep -q -- \"$ID\"; "
-            "then state='running'; "
-            "elif ps -o args= -p \"$pid\" 2>/dev/null | grep -q -- \"$ID\"; "
-            "then state='running'; fi; "
-            "elif [ -f \"$J/killed\" ]; then state='killed'; fi; "
-            "echo \"$state|$code|$pid\""
-        )
-        out = self.run(script, timeout=15, sudo=sudo, internal=True)
+    def _job_shell_state(self, job_dir_q: str, job_id: str, sudo: bool) -> dict:
+        """Resolve one job's {state, exit_code, pid} from remote markers."""
+        out = self.run(
+            self._JOB_STATE_FN + f"\njob_state {job_dir_q} {shlex.quote(job_id)}",
+            timeout=15, sudo=sudo, internal=True)
         state, _, rest = out["stdout"].strip().partition("|")
         code, _, pid = rest.partition("|")
         return {"state": state or "lost", "exit_code": code, "pid": pid}
@@ -1303,19 +1290,28 @@ class SSHConnection:
         return json.loads(out["stdout"])
 
     def _remote_put_bytes(self, remote_path: str, data: bytes,
-                          mode: int = None):
-        """Write small bytes over SFTP, creating the parent directory."""
+                          mode: int = None, append: bool = False):
+        """Create, overwrite, or append a small remote file over SFTP.
+
+        ``mode`` applies only to newly created files; existing files keep
+        their current owner and mode.
+        """
         self.run(self._cmd("mkdir", path=posixpath.dirname(remote_path)),
                  timeout=10, internal=True)
         sftp = self._sftp(timeout=self.timeout)
         try:
-            with sftp.open(remote_path, "wb") as fh:
+            try:
+                sftp.stat(remote_path)
+                existed = True
+            except IOError:
+                existed = False
+            with sftp.open(remote_path, "ab" if append else "wb") as fh:
                 fh.write(data)
-            if mode is not None:
+            if mode is not None and not existed:
                 try:
                     sftp.chmod(remote_path, mode)
                 except IOError:
-                    pass
+                    pass  # e.g. Windows SFTP servers without chmod
         finally:
             sftp.close()
 
@@ -1399,21 +1395,37 @@ class SSHConnection:
 
         launched = self.run(
             "setsid nohup bash " + shlex.quote(f"{job_dir}/wrapper.sh")
-            + " >/dev/null 2>&1 </dev/null & echo launched",
+            + " >/dev/null 2>&1 </dev/null & ",
             timeout=15, internal=True)
-        if "launched" not in launched["stdout"]:
+        if launched["code"] != 0:
             raise RuntimeError(
                 f"job launch failed: {launched['stderr'].strip()[:200]}")
-        pid = self.run(
+        # Proof of life: the wrapper writes pid (started) or exit
+        # (immediate failure, e.g. bad workdir). A constant echo could
+        # not tell either from a silently missing bash.
+        pid_q = shlex.quote(job_dir + "/pid")
+        exit_q = shlex.quote(job_dir + "/exit")
+        probe = self.run(
             "i=0; "
-            f"while [ $i -lt 30 ] && [ ! -s {shlex.quote(job_dir + '/pid')} ]; do "
+            f"while [ $i -lt 30 ] && [ ! -s {pid_q} ] && [ ! -f {exit_q} ]; do "
             "i=$((i+1)); sleep 0.1 2>/dev/null || sleep 1; done; "
-            f"cat {shlex.quote(job_dir + '/pid')} 2>/dev/null || true",
+            f"if [ -s {pid_q} ]; then cat {pid_q}; "
+            "elif [ -f " + exit_q + " ]; then echo \"EXITED$(cat " + exit_q + ")\"; fi",
             timeout=15, internal=True)["stdout"].strip()
+        if not probe:
+            raise RuntimeError(
+                f"job {job_id} did not report a pid or exit marker")
+        if probe.startswith("EXITED"):
+            return {
+                "stdout": f"Job {job_id} exited immediately "
+                          f"(code {probe[6:]})\n",
+                "stderr": "", "code": 0,
+                "job_id": job_id, "pid": "",
+            }
         return {
-            "stdout": f"Started {job_id} (pid {pid or 'unknown'})\n",
+            "stdout": f"Started {job_id} (pid {probe})\n",
             "stderr": "", "code": 0,
-            "job_id": job_id, "pid": pid,
+            "job_id": job_id, "pid": probe,
         }
 
     def job_status(self, job_id: str, tail_lines: int = 100) -> dict:
@@ -1482,22 +1494,13 @@ class SSHConnection:
                 "j=${f%/exit}; case \"${j##*/}\" in job-*) rm -rf -- \"$j\";; esac; "
                 "done\n" if clean_days else ""
             )
-            +
+            + self._JOB_STATE_FN + "\n"
             "found=0\n"
             "for J in \"$ROOT\"/job-*; do\n"
             "  [ -d \"$J\" ] || continue\n"
-            "  found=1\n"
-            "  ID=${J##*/}; state='lost'; code=''; "
-            "pid=$(cat \"$J/pid\" 2>/dev/null)\n"
-            "  if [ -f \"$J/exit\" ]; then state='exited'; code=$(cat \"$J/exit\")\n"
-            "  elif [ -n \"$pid\" ] && kill -0 \"$pid\" 2>/dev/null; then "
-            "if tr '\\0' ' ' < \"/proc/$pid/cmdline\" 2>/dev/null | grep -q -- \"$ID\"; "
-            "then state='running'; "
-            "elif ps -o args= -p \"$pid\" 2>/dev/null | grep -q -- \"$ID\"; "
-            "then state='running'; fi\n"
-            "  elif [ -f \"$J/killed\" ]; then state='killed'; fi\n"
+            "  found=1; ID=${J##*/}\n"
             "  cmd=$(head -n 1 \"$J/cmd\" 2>/dev/null | cut -c 1-80)\n"
-            "  echo \"$ID|$state|$code|$cmd\"\n"
+            "  echo \"$ID|$(job_state \"$J\" \"$ID\")|$cmd\"\n"
             "done\n"
             "[ $found -eq 0 ] && echo 'NOJOBS' || true\n"
         )
@@ -1505,18 +1508,18 @@ class SSHConnection:
                        sudo=sudo, internal=True)
         if out["code"] != 0:
             return out
-        lines = [l for l in out["stdout"].splitlines() if l and l != "NOJOBS"]
         jobs = []
-        for line in lines:
-            jid, _, rest = line.partition("|")
-            state, _, rest = rest.partition("|")
-            code, _, cmd = rest.partition("|")
-            jobs.append({"id": jid, "state": state, "exit_code": code,
-                         "command": cmd})
+        for line in out["stdout"].splitlines():
+            if line == "NOJOBS":
+                continue
+            parts = line.split("|", 4)  # id|state|code|pid|command (may hold |)
+            if len(parts) < 5:
+                continue
+            jobs.append({"id": parts[0], "state": parts[1],
+                         "exit_code": parts[2], "command": parts[4]})
         return {
             "stdout": out["stdout"], "stderr": out["stderr"],
-            "code": 0, "jobs": jobs,
-            "count": len(jobs),
+            "code": 0, "jobs": jobs, "count": len(jobs),
         }
 
     def list_scripts(self, sudo: bool = False) -> dict:
