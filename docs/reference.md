@@ -153,13 +153,13 @@ Generated helper arguments are quoted for the chosen shell. Script-name validati
 
 The direct SSH client also loads system host keys and the checkout-local file. Nondefault ports use `[host]:port`. Verify fingerprints out of band before trusting a first connection. For a legitimate rotation, verify the replacement before changing the local entry; do not blindly delete it. A warning is printed if TOFU persistence fails, so successful connection does not guarantee durable enrollment.
 
-The probe uses a separate connection, and the proxy path verifies independently as well: its transport negotiates first, the authenticating transport's own key is checked against the stored entries with the same rules as the probe, and credentials are sent only after that check passes. Thus `tofu`/`strict` bind verification to the authenticated proxy connection, not only to the probe. Direct SSH additionally verifies its authentication connection through Paramiko's loaded host-key policy.
+In `tofu`/`strict` mode, the proxy authentication connection also checks its own negotiated host key before sending credentials, using the same rules as the separate probe. Direct SSH checks its authentication connection through Paramiko's loaded host-key policy.
 
 ### Proxy, reconnect, and concurrency
 
 A nonempty per-server SOCKS5 proxy takes precedence over the enabled global proxy. When the proxy-authentication connection attempt fails, the code logs `proxy_error.log` and tries direct SSH. **The host-key probe occurs before this fallback block**: a failed proxied probe aborts the cycle rather than falling back. Proxy authentication fields and a separate proxy timeout are not implemented.
 
-Proxy SSH authentication uses the configured private key (and `key_password`) when `key` is set, otherwise the configured login password. It does not discover SSH-agent/default keys or prompt locally for a key passphrase. Key loading failures are reported rather than switching to the login password on that transport. Incomplete multi-step authentication is treated as failure, not a usable cached connection. These failures still enter the direct-SSH fallback above; that path uses Paramiko's `SSHClient.connect` authentication defaults, which can also try agent/default keys.
+Proxy SSH authentication uses the configured `key` and optional `key_password`, otherwise the login password; it does not discover agent/default keys or prompt locally. Key-loading errors and incomplete authentication enter the direct-SSH fallback above, where Paramiko may also try agent/default keys.
 
 Failed connection cycles can start a daemon reconnect thread. While consecutive failures are fewer than five it waits `reconnect_interval`; from the fifth failure it waits 60 seconds. Explicit requests attempt immediately even during cooldown. `auto_reconnect: false` disables background retries and the automatic retry after a failed channel open. Threads end with the process; a short-lived CLI is not a persistent reconnect service.
 
