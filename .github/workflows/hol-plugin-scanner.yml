@@ -21,6 +21,7 @@ jobs:
           plugin_dir: "."
           mode: scan
           min_score: 75
-          fail_on_severity: none
+          fail_on_severity: low
           format: sarif
-          upload_sarif: true
+          # Fork PR tokens cannot write code-scanning results; still run the scan.
+          upload_sarif: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
