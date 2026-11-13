@@ -1,0 +1,17 @@
+.git/
+.github/
+__pycache__/
+*.pyc
+.pytest_cache/
+test/
+evals/
+known_hosts
+config.yaml
+servers/
+proxy_error.log
+.env
+.env.*
+.venv/
+venv/
+env/
+x1.sh
