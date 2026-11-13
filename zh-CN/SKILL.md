@@ -24,7 +24,7 @@ description: >
 /absolute/path/to/python /absolute/path/ssh-ops/cli.py my-server run "uptime"
 ```
 
-先用 `list-servers` 确认服务器名称，不猜名称或用列表序号代替名称。准备复用操作时，用 `list-aliases` 查看别名内容、sudo 与超时设置；同一任务中已查明的信息无需重复查询。缺少依赖或配置时，再读[安装指南](docs/install.md)。
+先用 `list-servers` 确认服务器名称，不猜名称或用列表序号代替名称。准备复用别名时，用 `list-aliases` 查看别名内容、sudo 与超时设置；同一任务中已查明的信息无需重复查询。缺少依赖或配置时，再读[安装指南](docs/install.md)。
 
 ## 选择操作
 
@@ -63,7 +63,7 @@ description: >
 
 ## 部署
 
-按[部署专章](docs/deploy.md)先确认服务器、所在地、模式、目录、端口和检查地址，再生成项目专用的本地脚本与服务器脚本。模板位于 [deploy/scripts/](../deploy/scripts/)，不是无需修改即可运行的通用发布器。所有远端交互走此 CLI；镜像源与健康检查规则以部署专章为准。
+按[部署专章](docs/deploy.md)先确认服务器、所在地、模式、目录、端口和检查地址，再生成项目专用的本地脚本与服务器脚本。模板位于 [deploy/scripts/](../deploy/scripts/)，不是拿来就能用的通用发布脚本。所有远端交互走此 CLI；镜像源与健康检查规则以部署专章为准。
 
 ## 验证与汇报
 

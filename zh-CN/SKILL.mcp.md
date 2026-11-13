@@ -42,13 +42,13 @@ description: >
 | `ssh_run_alias` | `server, alias_name` | 使用 YAML 权限与超时执行别名 |
 | `ssh_list_aliases` | `server` | 列出本地别名定义 |
 
-必填字符串不能为空；未知参数会被拒绝。`ssh_read_file` 的 offset/max_bytes 显式 null 使用默认值，其他可选参数不应随意传 null。普通 timeout 和任务 timeout 含义不同，精确调整公式见[超时规则](docs/reference.md#security)。不要把工具注解当权限控制；尤其任务列表带清理参数时会删除远端内容。
+必填字符串不能为空；未知参数会被拒绝。`ssh_read_file` 的 offset/max_bytes 显式 null 使用默认值，其他可选参数不应随意传 null。普通 timeout 和任务 timeout 含义不同，精确调整公式见[超时规则](docs/reference.md#security)。不要把工具注解当权限控制；任务列表命令带上清理参数时就会删除远端内容。
 
 ## 动态别名工具
 
-每个别名可生成无参数工具 `ssh_alias.<server>.<name>`。名称中的不支持字符会替换，最长 128 字符，冲突时附加摘要和必要的序号，因此应以 `tools/list` 实际结果为准，不自行拼接名称。
+每个别名可生成无参数工具 `ssh_alias.<server>.<name>`。别名名称中的非法字符会被替换，工具名最长 128 字符；名称冲突时附加摘要，必要时再加序号。工具名应以 `tools/list` 的实际结果为准，不要自行拼接。
 
-发现结果缓存 10 秒；MCP 配置 CRUD 会使缓存失效，但外部编辑文件不保证缓存连接重新加载。工具列表不发送主动变更通知。别名配置与路径限制见[运行参考](docs/reference.md)。
+发现结果缓存 10 秒；MCP 配置 CRUD 会使缓存失效，但外部编辑文件不保证缓存连接重新加载。工具列表发生变化时不会主动通知客户端。别名配置与路径限制见[运行参考](docs/reference.md)。
 
 ## 传输与注册
 
@@ -64,7 +64,7 @@ HTTP 服务：
 python mcp_server.py --http --host 127.0.0.1 --port 8802 --path /mcp
 ```
 
-启动选项为 `--http`、`--host`（默认 `127.0.0.1`）、`--port`（默认 `8802`）、`--path`（默认 `/mcp`）、`--token`（默认无）。非回环绑定必须设置非空 token；部署时从可信秘密存储获取，勿提交到配置仓库。
+启动选项为 `--http`、`--host`（默认 `127.0.0.1`）、`--port`（默认 `8802`）、`--path`（默认 `/mcp`）、`--token`（默认无）。非回环绑定必须设置非空 token；部署时从可信的密钥存储获取，勿提交到配置仓库。
 
 回环无 token 的注册示例：
 
