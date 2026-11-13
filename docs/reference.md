@@ -141,7 +141,7 @@ The same checks apply to inline aliases and job command payloads. Generated help
 
 Path allow-lists use directory-boundary comparison, not arbitrary string prefixes. Local paths resolve on the client; remote paths use lexical POSIX normalization. Remote case folding follows the client's OS, and no remote symlink resolution is performed. They are not a filesystem sandbox and do not restrict arbitrary `run` commands or job directories. Download checks include the local root and individual remote files; sudo recursive downloads check staged paths, which can conflict with an allow-list for the original directory. Avoid combining restricted recursive downloads with sudo unless verified for your configuration.
 
-Generated helper arguments are quoted for the chosen shell. Script-name validation rejects traversal/absolute names; this validation is not applied to every arbitrary remote path. Protect YAML credentials with local permissions and keep them out of version control. MCP errors redact known secret keys, not secrets embedded inside command/content strings.
+Generated helper arguments are quoted for the chosen shell. Script-name validation rejects traversal/absolute names; this validation is not applied to every arbitrary remote path. Protect YAML credentials with local permissions and keep them out of version control. MCP error argument summaries redact values under known secret keys; exception messages and tool output are not scrubbed. Secrets embedded inside command/content strings are not redacted.
 
 ### Host keys
 
@@ -152,6 +152,8 @@ Generated helper arguments are quoted for the chosen shell. Script-name validati
 | `insecure` | Skips the probe and uses permissive missing-key handling; existing loaded key mismatches can still be rejected by Paramiko on the direct path |
 
 The direct SSH client also loads system host keys and the checkout-local file. Nondefault ports use `[host]:port`. Verify fingerprints out of band before trusting a first connection. For a legitimate rotation, verify the replacement before changing the local entry; do not blindly delete it. A warning is printed if TOFU persistence fails, so successful connection does not guarantee durable enrollment.
+
+**Current limitation:** the probe uses a separate connection. The proxy authentication path calls `Transport.connect` without an expected host key and does not recheck the authenticated transport against the probe or known_hosts. Thus `tofu`/`strict` verify the probe, but do not bind that result to the proxy authentication connection. Direct SSH additionally verifies its authentication connection through Paramiko's loaded host-key policy.
 
 ### Proxy, reconnect, and concurrency
 
@@ -185,6 +187,8 @@ Ordinary command timeout closes its channel and returns code `-1`; the remote pr
 - Non-sudo upload optionally applies 0755 for executable files on bash servers; otherwise SFTP/server creation rules apply. Sudo bash upload stages in `/tmp`, then moves into place: overwrites restore the target's owner/mode; new files inherit the parent's owner/group and receive 0755. `executable=false` does not override that sudo new-file mode.
 - Sudo download copies to a unique `/tmp` staging path, changes staging ownership to the login user, downloads it, and attempts cleanup. It does not chmod/chown the source.
 
+Bash staging names contain random suffixes but are not exclusively reserved; private staging permissions are not guaranteed. Successful sudo upload installation moves the staged file into place, but failed uploads/installs can leave it behind. Download/read paths attempt removal; staging failures before cleanup is entered can also leave files behind.
+
 ### Text reads and writes
 
 Reads use byte offsets, default to 65536 bytes, and cap positive requested size at **1 MiB (1048576 bytes)**. `max_bytes=0` uses the default. Results contain `size`, `offset`, `next_offset`, `eof`, and text stdout; MCP presents paging fields in its text summary, while CLI shows continuation on stderr. Explicit MCP null offset/size use the defaults.
@@ -215,7 +219,7 @@ Kill checks state, writes `killed`, signals the wrapper process group with TERM,
 
 `clean_days > 0` uses `find ... -name exit -mtime +N` and removes the containing job directories. This follows `find`'s rounded-day semantics and cleans only jobs with an exit marker, not all `killed`/`lost` jobs. Cleanup is destructive even though `ssh_job_list` currently has a read-only tool annotation. List output includes ID, state, exit code and a command preview, not the human label.
 
-Sudo start writes `pass` over SFTP with a requested 0600 mode; the wrapper reads and deletes it before running the command. Mode application happens after creation, chmod errors are tolerated by the shared writer, and a failed launch can leave the file behind. Do not treat this as a guarantee that the secret is never temporarily readable; use restrictive remote directory permissions/umask. Status uses stored sudo metadata for state/log reads. Logs are opened by the login-user wrapper, so they are not inherently root-owned.
+Sudo start writes `pass` over SFTP with a requested 0600 mode for a newly created file; existing files retain their mode. The wrapper reads it and attempts deletion before running the command. Mode application happens after writing, chmod errors are tolerated by the shared writer, and a failed launch can leave the file behind. Do not treat this as a guarantee that the secret is never temporarily readable; use restrictive remote directory permissions/umask. **Current limitation:** the generated `printf ... | sudo -S ... </dev/null` redirects sudo's stdin away from the password pipe. Password-required sudo jobs therefore cannot rely on receiving the configured password, even when wrapper startup is acknowledged. Status uses stored sudo metadata for state/log reads. Logs are opened by the login-user wrapper, so they are not inherently root-owned.
 
 <a id="http"></a>
 ## MCP HTTP semantics
