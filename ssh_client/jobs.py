@@ -131,10 +131,10 @@ class JobStore:
         if meta["timeout"]:
             inner = f"timeout {meta['timeout']} {inner}"
         if sudo:
-            # sudo -S reads from the finite printf pipe. If sudo skips its
-            # prompt, the command may inherit the unread password before EOF.
-            # A trailing </dev/null would override the password pipe.
-            launch = f"printf '%s\\n' \"$SP\" | sudo -S -p '' {inner}"
+            # Only the elevated command redirects stdin; sudo must retain
+            # the password pipe regardless of whether it consumes a password.
+            launch = ("printf '%s\\n' \"$SP\" | sudo -S -p '' "
+                      "bash -c 'exec </dev/null; exec \"$@\"' -- " + inner)
             stdin_redir = ""
         else:
             launch = inner
