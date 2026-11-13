@@ -130,8 +130,16 @@ class JobStore:
         inner = "bash -c \"$CMD\""
         if meta["timeout"]:
             inner = f"timeout {meta['timeout']} {inner}"
-        launch = (f"printf '%s\\n' \"$SP\" | sudo -S -p '' {inner}"
-                  if sudo else inner)
+        if sudo:
+            # sudo -S takes the password from the printf pipe; the write end
+            # closing gives the command EOF after the password line, so it
+            # still cannot block on stdin. A trailing </dev/null here would
+            # override the pipe and starve sudo of the password.
+            launch = f"printf '%s\\n' \"$SP\" | sudo -S -p '' {inner}"
+            stdin_redir = ""
+        else:
+            launch = inner
+            stdin_redir = " </dev/null"
         wrapper = (
             "#!/bin/bash\n"
             f"J={shlex.quote(job_dir)}\n"
@@ -145,7 +153,7 @@ class JobStore:
             "  exit 1\n"
             "fi\n"
             "CMD=$(cat \"$J/cmd\")\n"
-            f"{launch} >\"$J/out.log\" 2>\"$J/err.log\" </dev/null\n"
+            f"{launch} >\"$J/out.log\" 2>\"$J/err.log\"{stdin_redir}\n"
             "EC=$?\n"
             "echo $EC > \"$J/exit.tmp\" && mv \"$J/exit.tmp\" \"$J/exit\"\n"
         )

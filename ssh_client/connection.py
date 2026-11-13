@@ -319,16 +319,24 @@ class SSHConnection(TransferMixin, JobsMixin):
                 return
 
     def _connect_proxy_with(self, proxy: dict):
-        """Connect via SOCKS5 proxy"""
+        """Connect via SOCKS5 proxy.
+
+        Negotiates on the authenticating transport itself and verifies its
+        host key *before* sending credentials: the probe connection alone
+        does not bind the authenticated session, since a server offering
+        several key types could present an unverified type after probing.
+        """
         sock = self._make_socket(proxy)
         transport = None
         try:
-            c = self._make_client()
+            c = paramiko.SSHClient()
             transport = paramiko.Transport(sock)
-            kw = self._get_auth()
             transport.banner_timeout = self.timeout
             transport.auth_timeout = self.timeout
-            transport.connect(username=self.user, **kw)
+            transport.start_client()
+            if self.host_key_checking != "insecure":
+                self._check_or_record_host_key(transport.get_remote_server_key())
+            self._transport_auth(transport)
             transport.set_keepalive(self.keepalive_interval)
             c._transport = transport
             self._client = c
@@ -339,6 +347,34 @@ class SSHConnection(TransferMixin, JobsMixin):
             else:
                 sock.close()
             raise
+
+    def _transport_auth(self, transport):
+        """Authenticate a negotiated Transport with this server's credentials."""
+        kw = self._get_auth()
+        if "password" in kw:
+            transport.auth_password(self.user, kw["password"])
+            return
+        passphrase = kw.get("passphrase")
+        key = None
+        for kcls in (paramiko.RSAKey, paramiko.ECDSAKey, paramiko.Ed25519Key):
+            try:
+                key = kcls.from_private_key_file(kw["key_filename"],
+                                                 password=passphrase)
+                break
+            except Exception:
+                continue
+        if key is None:
+            dss = getattr(paramiko, "DSSKey", None)
+            if dss is not None:
+                try:
+                    key = dss.from_private_key_file(kw["key_filename"],
+                                                    password=passphrase)
+                except Exception:
+                    pass
+        if key is None:
+            raise paramiko.SSHException(
+                f"could not load private key {kw['key_filename']}")
+        transport.auth_publickey(self.user, key)
 
     def _connect_direct(self):
         """Connect directly (no proxy)"""
