@@ -88,8 +88,8 @@ class JobStore:
             name: optional human label (kept in listings)
             timeout: seconds after which the job is killed (0 = no limit)
             workdir: directory to run the command in (default: home)
-            sudo: run as root (password via a 0600 file the wrapper reads
-                and deletes before anything else can see it)
+            sudo: run as root (password via a file requesting mode 0600;
+                the wrapper reads it and attempts deletion before execution)
         """
         conn = self._conn
         if conn.shell != "bash":
@@ -131,10 +131,9 @@ class JobStore:
         if meta["timeout"]:
             inner = f"timeout {meta['timeout']} {inner}"
         if sudo:
-            # sudo -S takes the password from the printf pipe; the write end
-            # closing gives the command EOF after the password line, so it
-            # still cannot block on stdin. A trailing </dev/null here would
-            # override the pipe and starve sudo of the password.
+            # sudo -S reads from the finite printf pipe. If sudo skips its
+            # prompt, the command may inherit the unread password before EOF.
+            # A trailing </dev/null would override the password pipe.
             launch = f"printf '%s\\n' \"$SP\" | sudo -S -p '' {inner}"
             stdin_redir = ""
         else:
