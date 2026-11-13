@@ -6,11 +6,11 @@
 # Upload code.tar.gz to REMOTE_DIR, this script builds Docker image and runs.
 #
 # ⚠️  CUSTOMIZE THESE VALUES:
-#   REMOTE_DIR     - 部署目录，如 /opt/my-app
-#   CONTAINER_NAME - 容器名称，如 my-app
-#   IMAGE_NAME     - 镜像名称，如 my-app:latest
-#   PORT           - 服务端口，如 8080
-#   DOCKER_COMPOSE - 是否使用 docker-compose，true/false
+#   REMOTE_DIR     - deployment directory, e.g. /opt/my-app
+#   CONTAINER_NAME - container name, e.g. my-app
+#   IMAGE_NAME     - image name, e.g. my-app:latest
+#   PORT           - service port, e.g. 8080
+#   DOCKER_COMPOSE - use docker-compose instead of plain docker, true/false
 # =============================================================================
 set -eo pipefail
 
