@@ -3,6 +3,7 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+CONTEXT.md
 test/
 evals/
 known_hosts

@@ -124,6 +124,9 @@ def test_job_start_sudo_writes_mode600_pass_and_stdin_password():
     assert pass_paths and puts[pass_paths[0]][1] == 0o600
     wrapper = puts[[p for p in puts if p.endswith("wrapper.sh")][0]][0].decode()
     assert "printf '%s\\n' \"$SP\" | sudo -S -p '' timeout 600 bash -c \"$CMD\"" in wrapper
+    # The password pipe must survive: no </dev/null on the sudo launch line
+    assert 'timeout 600 bash -c "$CMD" >"$J/out.log" 2>"$J/err.log"\n' in wrapper
+    assert '2>"$J/err.log" </dev/null' not in wrapper
     assert 'rm -f "$J/pass"' in wrapper  # password file lives only moments
 
 
