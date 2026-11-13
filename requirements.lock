@@ -1,0 +1,12 @@
+# Locked versions for requirements.txt, including transitive dependencies.
+# CPython 3.11+ runtime pins; resolution checked on Windows with Python 3.14.
+# Install with: python -m pip install -r requirements.lock
+bcrypt==5.0.0
+cffi==2.1.0 ; platform_python_implementation != "PyPy"
+cryptography==50.0.0
+invoke==3.0.3
+paramiko==5.0.0
+pycparser==3.0 ; platform_python_implementation != "PyPy"
+PyNaCl==1.6.2
+PySocks==1.7.1
+PyYAML==6.0.3
