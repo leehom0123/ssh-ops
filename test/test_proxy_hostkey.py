@@ -7,6 +7,8 @@ type on the second connection and capture the password.
 """
 import paramiko
 import pytest
+import uuid
+from unittest.mock import Mock
 
 from ssh_client import SSHConnection
 from ssh_client import connection as connmod
@@ -35,6 +37,9 @@ class FakeTransport:
 
     def auth_password(self, username, password):
         self.events.append(("password", username, password))
+
+    def is_authenticated(self):
+        return True
 
     def auth_publickey(self, username, key):
         self.events.append(("pubkey", username))
@@ -100,3 +105,63 @@ def test_proxy_insecure_skips_verification_and_authenticates(tmp_path, monkeypat
                          host_key_checking="insecure")
     conn._connect_proxy_with({"host": "p", "port": "1"})
     assert ("password", "deploy", "pw") in events
+
+
+def test_proxy_partial_auth_is_not_cached(tmp_path, monkeypatch):
+    conn, events = _conn(tmp_path, monkeypatch, SERVER_KEY, password="pw")
+    monkeypatch.setattr(FakeTransport, "is_authenticated", lambda self: False)
+    with pytest.raises(paramiko.AuthenticationException):
+        conn._connect_proxy_with({"host": "p", "port": 1})
+    assert conn._client is None
+
+
+def test_proxy_missing_key_preserves_file_error(tmp_path):
+    conn = SSHConnection({"host": "example.test", "user": "deploy",
+                          "key": str(tmp_path / "missing")})
+    with pytest.raises(FileNotFoundError):
+        conn._transport_auth(None)
+
+
+def test_proxy_encrypted_key_preserves_passphrase_error(tmp_path):
+    path = tmp_path / "key"
+    SERVER_KEY.write_private_key_file(str(path), password=uuid.uuid4().hex)
+    conn = SSHConnection({"host": "example.test", "user": "deploy", "key": str(path)})
+    with pytest.raises(paramiko.PasswordRequiredException):
+        conn._transport_auth(None)
+
+
+@pytest.mark.parametrize("key", [SERVER_KEY, paramiko.ECDSAKey.generate()])
+def test_proxy_loads_encrypted_private_key(tmp_path, key):
+    path = tmp_path / "key"
+    passphrase = uuid.uuid4().hex
+    key.write_private_key_file(str(path), password=passphrase)
+    conn = SSHConnection({"host": "example.test", "user": "deploy",
+                          "key": str(path), "key_password": passphrase})
+    transport = Mock()
+    conn._transport_auth(transport)
+    user, loaded = transport.auth_publickey.call_args.args
+    assert user == "deploy" and loaded.asbytes() == key.asbytes()
+
+
+def test_proxy_failure_falls_back_to_direct_after_probe(tmp_path, monkeypatch):
+    conn, events = _conn(tmp_path, monkeypatch, ATTACKER_KEY, password="pw",
+                         proxy={"host": "p", "port": 1})
+    conn._check_or_record_host_key(SERVER_KEY)
+    events.clear()
+    monkeypatch.setattr(conn, "_probe_host_key", lambda proxy: events.append("probe"))
+    monkeypatch.setattr(conn, "_log_proxy_error", lambda *args: None)
+    monkeypatch.setattr(conn, "_connect_direct", lambda: events.append("direct"))
+    conn._connect_once()
+    assert events == ["probe", "negotiate", "hostkey", "direct"]
+
+
+def test_failed_proxy_probe_does_not_fall_back(tmp_path, monkeypatch):
+    conn, events = _conn(tmp_path, monkeypatch, SERVER_KEY,
+                         proxy={"host": "p", "port": 1})
+    def fail_probe(proxy):
+        raise paramiko.SSHException("probe failed")
+    monkeypatch.setattr(conn, "_probe_host_key", fail_probe)
+    monkeypatch.setattr(conn, "_connect_direct", lambda: events.append("direct"))
+    with pytest.raises(paramiko.SSHException, match="probe failed"):
+        conn._connect_once()
+    assert events == []

@@ -107,7 +107,7 @@ def test_job_start_writes_files_and_reports_pid():
     assert base in text and "J=" in text
     assert 'echo $$ > "$J/pid"' in text          # pid first: kill targets the group
     assert 'CMD=$(cat "$J/cmd")' in text          # user command never gets quoted
-    assert 'bash -c "$CMD" >"$J/out.log" 2>"$J/err.log"' in text
+    assert 'bash -c "$CMD" >"$J/out.log" 2>"$J/err.log" </dev/null\n' in text
     assert 'echo $EC > "$J/exit.tmp" && mv "$J/exit.tmp" "$J/exit"' in text
     assert "/dev/null" in text                     # detached from the channel
     assert any("setsid nohup bash" in c[0] and "wrapper.sh" in c[0]

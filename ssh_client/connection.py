@@ -337,6 +337,9 @@ class SSHConnection(TransferMixin, JobsMixin):
             if self.host_key_checking != "insecure":
                 self._check_or_record_host_key(transport.get_remote_server_key())
             self._transport_auth(transport)
+            if not transport.is_authenticated():
+                raise paramiko.AuthenticationException(
+                    "Proxy SSH authentication incomplete; additional authentication required")
             transport.set_keepalive(self.keepalive_interval)
             c._transport = transport
             self._client = c
@@ -356,24 +359,24 @@ class SSHConnection(TransferMixin, JobsMixin):
             return
         passphrase = kw.get("passphrase")
         key = None
-        for kcls in (paramiko.RSAKey, paramiko.ECDSAKey, paramiko.Ed25519Key):
+        load_error = None
+        classes = [paramiko.RSAKey, paramiko.ECDSAKey, paramiko.Ed25519Key]
+        dss = getattr(paramiko, "DSSKey", None)
+        if dss is not None:
+            classes.append(dss)
+        for kcls in classes:
             try:
                 key = kcls.from_private_key_file(kw["key_filename"],
                                                  password=passphrase)
                 break
-            except Exception:
-                continue
-        if key is None:
-            dss = getattr(paramiko, "DSSKey", None)
-            if dss is not None:
-                try:
-                    key = dss.from_private_key_file(kw["key_filename"],
-                                                    password=passphrase)
-                except Exception:
-                    pass
+            except (OSError, paramiko.PasswordRequiredException):
+                raise
+            except (paramiko.SSHException, ValueError) as exc:
+                if load_error is None:
+                    load_error = exc
         if key is None:
             raise paramiko.SSHException(
-                f"could not load private key {kw['key_filename']}")
+                f"could not load private key {kw['key_filename']}: {load_error}") from load_error
         transport.auth_publickey(self.user, key)
 
     def _connect_direct(self):
