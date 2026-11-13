@@ -1,6 +1,9 @@
-# SSH Alias MCP Full Test Suite
-# 4 YAML configs × 3 client environments = 12 test combinations
-# Each combination runs the unified live suite (test/test_live_e2e.py) under pytest.
+# ssh-ops Live Test Matrix Runner
+# Runs the unified live suite (test/test_live_e2e.py) for each YAML config /
+# client environment combination (Windows shells and WSL). The live suite is
+# server-profile aware: security cases require SSH_TEST_SERVER=security-test,
+# empty-whitelist cases require test-server, and cases skip cleanly when the
+# chosen server lacks the capability they exercise.
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
