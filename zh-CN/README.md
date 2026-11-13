@@ -49,4 +49,4 @@ agent 安装见[安装指南](docs/install.md)，可选择装载 CLI 技能或�
 | [安装](docs/install.md) | agent 安装与验证 |
 | [部署](docs/deploy.md) | 流程、模板约定、镜像源与故障排查 |
 
-实现入口为 [CLI](../cli.py)、[MCP 服务](../mcp_server.py)和 [ssh_client/](../ssh_client/) 下的领域模块。Python 导入仍保留历史名称 `ssh_client`。
+实现入口为 [CLI](../cli.py)、[MCP 服务](../mcp_server.py)和 [ssh_client/](../ssh_client/) 下的领域模块。Python 导入仍沿用旧名称 `ssh_client`。

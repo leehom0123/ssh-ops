@@ -12,6 +12,8 @@
   "tags": ["ssh", "devops", "server-management", "linux", "remote"],
   "keywords": ["ssh", "devops", "server-management", "linux", "remote", "mcp", "cli", "deployment"],
   "category": "devops",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "SSH Ops",
     "shortDescription": "SSH server operations for agents and humans from one YAML config.",

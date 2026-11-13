@@ -70,7 +70,7 @@ EOF
 |---|---|
 | `upload-file <local> <remote> [-s] [-x] [-t SECS] [--no-overwrite]` | 上传单个文件到指定路径 |
 | `download <remote> <local> [-s] [-p REGEX] [-t SECS] [--no-overwrite]` | 下载文件或目录 |
-| `download-file <remote> <local> [-s] [-t SECS] [--no-overwrite]` | 指定路径下载，委托同一下载实现 |
+| `download-file <remote> <local> [-s] [-t SECS] [--no-overwrite]` | 指定路径下载，与 `download` 走同一实现 |
 | `download-script <name> <local> [-s] [-t SECS] [--no-overwrite]` | 从 `scripts_dir` 下载 |
 | `read-file <remote> [-o BYTES] [-l BYTES] [-s]` | stdout 输出文本；未读完时 stderr 提示下一个字节偏移 |
 | `write-file <remote> [-a] [-s]` | 从标准输入读取 UTF-8 文本，输出操作结果 |
@@ -96,6 +96,6 @@ python cli.py my-server write-file /etc/motd -s < note.txt
 ## 输出、错误与本地路径
 
 - 执行和传输命令通常返回操作的退出码。已知操作错误在 stderr 输出 `Error: ...` 并以 1 退出；非法 timeout 值和不合法的标准输入命令以 2 退出。
-- 列表、文本读取和正常返回的任务处理逻辑，不会把远端命令退出码直接变成 CLI 退出码。应检查任务 JSON 和健康检查结果，不能只看本地退出状态。
-- 本地上传、下载和配置文件路径使用项目的 Windows/WSL 路径转换。在 Windows Git Bash 下，CLI 会尝试用 `cygpath` 撤销 MSYS 路径重写；真实 Windows 目标路径若以 Git 或临时目录前缀开头，可改用 PowerShell/cmd 避免歧义。
+- 列表类命令、文本读取和正常结束的任务命令，不会把远端命令的退出码直接作为 CLI 退出码。应检查任务 JSON 和健康检查结果，不能只看本地退出状态。
+- 本地上传、下载和配置文件路径使用项目的 Windows/WSL 路径转换。在 Windows Git Bash 下，CLI 会借助 `cygpath` 还原被 MSYS 改写的路径；真实 Windows 目标路径若以 Git 或临时目录前缀开头，可改用 PowerShell/cmd 避免歧义。
 - 部署请按[部署专章](deploy.md)执行，不要从本参考中临时拼凑流程。

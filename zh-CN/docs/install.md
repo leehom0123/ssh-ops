@@ -4,7 +4,7 @@
 
 ## 1. 准备仓库与解释器
 
-使用 Python 3.9 或更高版本，并准备可用的 SSH/SFTP 服务器。依赖版本可能有更高的 Python 要求，建议选仍受支持的 Python 版本。
+使用 Python 3.9 或更高版本，并准备可用的 SSH/SFTP 服务器。某些依赖版本可能要求更新的 Python，建议选择仍在维护支持范围内的版本。
 
 ```bash
 git clone https://github.com/leehom0123/ssh-ops.git
@@ -16,6 +16,7 @@ POSIX 使用 `.venv/bin/python`，Windows 使用 `.venv/Scripts/python.exe`，�
 
 ## 2. 选择 agent 入口
 
+- **Codex 插件：**manifest 将 `skills/ssh-ops/` 注册为下述指南的唯一技能入口，通过 `.mcp.json` 注册本地 stdio 服务。启用前，客户端 PATH 中的 `python` 需已安装运行依赖；从已激活的虚拟环境启动客户端并继承其 PATH 即可。MCP 工作目录解析为已安装插件的根目录，不是用户项目目录。安装插件不会创建环境、安装依赖或配置服务器。若需固定解释器，可改用下述手动 MCP 注册方式，避免重复注册。根目录 `SKILL.md` 和语言副本只作参考，不作为额外插件技能装载。插件安装与直接安装技能二选一，同时使用可能出现重复技能。
 - **CLI 技能：**将完整仓库放入 agent 支持的技能目录，或在 agent 中配置该目录。默认装载根目录的英文 [SKILL.md](../../SKILL.md)；`zh-CN/` 只提供同名中文参考，不作为独立技能安装。保留完整目录结构，不能只复制技能文件。技能目录规则取决于客户端及版本，本项目不安装全局 `ssh-ops` 命令。
 - **MCP：**仓库可放在合适的位置，注册 [mcp_server.py](../../mcp_server.py)，以根目录英文 [SKILL.mcp.md](../../SKILL.mcp.md) 作为操作指南，需要时查阅[中文参考](../SKILL.mcp.md)。CLI 与 MCP 技能以及语言副本的 `name` 相同，不要作为多个技能同时装载。
 
@@ -38,7 +39,7 @@ MCP 入口文档提供 stdio 和 HTTP 注册命令。如果客户端使用常见
 
 先检查已安装的 `config.yaml` 中 `servers_dir` 指向哪里，不要假设它一定是仓库内的 `servers/`。按[配置参考](reference.md#configuration)创建服务器 YAML。凭据不要纳入版本控制，首次连接的主机指纹需通过独立渠道核实。
 
-## 4. 验证，不修改远端
+## 4. 验证安装
 
 ```bash
 python cli.py --help

@@ -22,6 +22,8 @@ jobs:
           mode: scan
           min_score: 75
           fail_on_severity: low
+          install_cisco: true
+          cisco_skill_scan: "on"
           format: sarif
           # Fork PR tokens cannot write code-scanning results; still run the scan.
           upload_sarif: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
