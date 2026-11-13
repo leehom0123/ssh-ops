@@ -9,11 +9,57 @@ Live lifecycle tests are `live`-marked (SSH_TEST_SERVER gated).
 import json
 import re
 import time
+import subprocess
+import shutil
 import pytest
 from unittest.mock import MagicMock, patch
 
 from ssh_client import SSHConnection
 from ssh_client.jobs import JobStore
+
+
+@pytest.mark.parametrize("sudo_mode", ["password", "cached", "nopasswd"])
+@pytest.mark.parametrize("job_timeout", [0, 10])
+def test_sudo_job_password_never_reaches_command_stdin(tmp_path, sudo_mode, job_timeout):
+    bash = shutil.which("bash")
+    if not bash:
+        pytest.skip("bash required for wrapper execution")
+    conn = _conn()
+    puts = _capture_puts(conn)
+    conn.run = _Runner({"setsid": "launched", "cat": "7\n"})
+    conn.job_start("cat; printf 'finished\\n'", sudo=True, timeout=job_timeout, workdir=".")
+    for path, (data, _) in puts.items():
+        (tmp_path / path.rsplit("/", 1)[-1]).write_bytes(data)
+    wrapper = (tmp_path / "wrapper.sh").read_text(encoding="utf-8")
+    wrapper = re.sub(r"^J=.*$", "J=.", wrapper, count=1, flags=re.M)
+    # Model sudo's stdin consumption, not privilege elevation. Both skipped
+    # prompt modes must leave the password unread to exercise the leak.
+    fake_sudo = "sudo() { shift 3; "
+    if sudo_mode == "password":
+        fake_sudo += 'IFS= read -r supplied; [ "$supplied" = pw ] || return 91; '
+    fake_sudo += '"$@"; };\n'
+    result = subprocess.run([bash, "-c", fake_sudo + wrapper], cwd=tmp_path,
+                            input=b"", capture_output=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "exit").read_text().strip() == "0"
+    assert (tmp_path / "out.log").read_text() == "finished\n"
+    assert not (tmp_path / "pass").exists()
+
+
+@pytest.mark.parametrize("consume_password", [True, False])
+def test_ordinary_sudo_password_never_reaches_command_stdin(consume_password):
+    bash = shutil.which("bash")
+    if not bash:
+        pytest.skip("bash required for sudo command execution")
+    command, password = _conn()._prepare_sudo("cat; printf 'finished\\n'")
+    fake_sudo = "sudo() { shift 3; "
+    if consume_password:
+        fake_sudo += 'IFS= read -r supplied; [ "$supplied" = pw ] || return 91; '
+    fake_sudo += '"$@"; };\n'
+    result = subprocess.run([bash, "-c", fake_sudo + command], input=(password + "\n").encode(),
+                            capture_output=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == b"finished\n"
 
 
 def _conn(cfg=None, **attrs):
@@ -123,7 +169,7 @@ def test_job_start_sudo_writes_mode600_pass_and_stdin_password():
     pass_paths = [p for p in puts if p.endswith("/pass")]
     assert pass_paths and puts[pass_paths[0]][1] == 0o600
     wrapper = puts[[p for p in puts if p.endswith("wrapper.sh")][0]][0].decode()
-    assert "printf '%s\\n' \"$SP\" | sudo -S -p '' timeout 600 bash -c \"$CMD\"" in wrapper
+    assert "printf '%s\\n' \"$SP\" | sudo -S -p '' bash -c" in wrapper
     # The password pipe must survive: no </dev/null on the sudo launch line
     assert 'timeout 600 bash -c "$CMD" >"$J/out.log" 2>"$J/err.log"\n' in wrapper
     assert '2>"$J/err.log" </dev/null' not in wrapper

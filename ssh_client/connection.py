@@ -473,7 +473,10 @@ class SSHConnection(TransferMixin, JobsMixin):
         """
         if not self.sudo_password:
             raise ValueError("sudo_password not configured for this server")
-        return f"sudo -S -p '' bash -c {shlex.quote(cmd)}", self.sudo_password
+        # Redirect inside the elevated shell, leaving sudo's password input
+        # intact even when cached credentials make it skip reading stdin.
+        payload = "exec </dev/null; " + cmd
+        return f"sudo -S -p '' bash -c {shlex.quote(payload)}", self.sudo_password
 
     def _strip_sudo_noise(self, result: dict) -> dict:
         """Remove '[sudo]' password prompt lines from output."""
