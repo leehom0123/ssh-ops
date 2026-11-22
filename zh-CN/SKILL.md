@@ -24,7 +24,7 @@ description: >
 /absolute/path/to/python /absolute/path/ssh-ops/cli.py my-server run "uptime"
 ```
 
-先用 `list-servers` 确认服务器名称，不猜名称或用列表序号代替名称。准备复用别名时，用 `list-aliases` 查看别名内容、sudo 与超时设置；同一任务中已查明的信息无需重复查询。缺少依赖或配置时，再读[安装指南](docs/install.md)。
+先用 `list-servers` 确认服务器名称，不猜名称或用列表序号代替名称。用户说的服务器不在列表里时，先问再动：列出列表中最接近的名称供用户选择，或收集 host、用户和认证信息后新建条目。准备复用别名时，用 `list-aliases` 查看别名内容、sudo 与超时设置；同一任务中已查明的信息无需重复查询。缺少依赖或配置时，再读[安装指南](docs/install.md)。
 
 ## 选择操作
 
@@ -50,7 +50,7 @@ description: >
 | 长任务 | `job-start '<command>'` → `job-status <id>`；需终止时用 `job-kill <id>` |
 | 任务列表 | `job-list` |
 
-本地服务器配置的创建、更新、复制与删除，按 [CLI 参考](docs/cli.md)选择具体命令，不在远端操作中修改本地配置文件。
+服务器配置的创建、更新、复制与删除用 `create-server`、`update-server`、`copy-server`、`delete-server` 完成（语法见 [CLI 参考](docs/cli.md)）。查看配置走 `list-servers` 和 `list-aliases`，不要直接打开或直接修改服务器目录里的 YAML 文件；`create-server` 把你写好的 YAML 作为输入文件安装进服务器目录，远端操作不改动本地配置。
 
 ## 关键注意事项
 

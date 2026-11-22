@@ -11,7 +11,7 @@ description: >
 
 [English](../SKILL.mcp.md)
 
-本文件是中文参考，默认英文入口位于根目录的 [SKILL.mcp.md](../SKILL.mcp.md)。先调用 `ssh_list_servers`，再用 `ssh_list_aliases` 确认别名。配置与运行语义统一见[运行参考](docs/reference.md)，CLI 使用见 [SKILL.md](SKILL.md)。下文命令在仓库根目录执行，不是在 `zh-CN/` 中执行。
+本文件是中文参考，默认英文入口位于根目录的 [SKILL.mcp.md](../SKILL.mcp.md)。先调用 `ssh_list_servers`，再用 `ssh_list_aliases` 确认别名。服务器配置的增删改只用下方的 create/update/copy/delete 工具，不直接读取或编辑 YAML 文件；用户说的服务器不在列表里时，列出最接近的名称供选择，或收集 host、用户和认证信息后用 `ssh_create_server` 新建。配置与运行语义统一见[运行参考](docs/reference.md)，CLI 使用见 [SKILL.md](SKILL.md)。下文命令在仓库根目录执行，不是在 `zh-CN/` 中执行。
 
 ## 22 个静态工具
 

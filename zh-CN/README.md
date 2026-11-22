@@ -2,17 +2,24 @@
 
 [English](../README.md)
 
-通过 CLI 或 MCP 管理 SSH 服务器，用 YAML 保存连接配置和可复用的命令别名。
+用 CLI 或 MCP 操作远端 SSH 服务器：两个入口共用一套 Python 核心，服务器配置写在 YAML 里，常用命令登记成可复用的别名。
 
-## 主要能力
+## 特色
 
-- 命令执行、脚本运行、SFTP 传输和远端文本编辑共用一套 Python 核心。
-- CLI 面向终端和 agent；MCP 服务支持 stdio 与 HTTP 两种传输。
-- YAML 别名可自动生成可调用的 MCP 工具。
-- 耗时操作可交给远端后台任务，日志可按字节分页读取。
-- 提供主机密钥校验、命令过滤、路径允许列表和 sudo；适用范围与限制见详细参考。
+- **一个核心，两个入口。** 命令执行、脚本上传运行、SFTP 传输、远端文本编辑和后台任务都由同一套 Python 代码实现，CLI 与 MCP 服务（支持 stdio 和 HTTP 两种传输）只是入口不同。终端里验证过的操作，可以直接交给 agent 通过 MCP 调用。
+- **别名即工具。** 常用命令登记在服务器 YAML 里成为别名：一条命名命令或脚本，带自己的 timeout 和 sudo 设置。MCP 服务为每个别名生成一个零参数工具（如 `ssh_alias.my-server.health`），agent 直接调用，不用重新拼命令、判断权限：
 
-`shell` 为 `bash`、`cmd` 或 `powershell` 选择辅助命令模板，不会把任意命令翻译成另一种 shell 语法。连接只在同一进程内复用，独立的 CLI 与 MCP 进程不共享连接。
+  ```yaml
+  # servers/my-server.yml
+  aliases:
+    - name: health
+      inline: "df -h /"
+      desc: 查看磁盘占用
+  ```
+
+- **后台任务与分页读取。** 构建、迁移这类耗时操作以背景任务启动，拿任务 ID 轮询，不必占住一次 MCP 请求；任务状态记在远端的标记文件里，本地进程或 MCP 重启后依然可查。日志和文本按字节分页读取，大文件不会整段进入 agent 上下文。背景任务要求 bash 服务器。
+- **安全限制。** 主机密钥在认证前探测，默认首次信任（`tofu`），中间人拿不到登录口令；命令按黑白名单过滤，上传下载核对本地和远端路径允许列表，sudo 密码配在 YAML 里，不嵌在命令行中。正则过滤是护栏不是沙箱，各项边界见[运行参考](docs/reference.md)。
+- **跨平台。** ssh-ops 内置 paramiko（纯 Python 的 SSH 实现），运行时不需要系统 ssh 客户端，Windows、Linux、macOS 均可。远端按 `shell` 设置区分 bash（Linux、macOS 服务器）和 cmd、powershell（装了 OpenSSH 服务的 Windows 服务器），该设置决定辅助命令用哪套模板，不翻译用户命令。连接可走 SOCKS5 代理，失败自动回退直连；连接只在单进程内复用，CLI 和 MCP 各自建立自己的连接。
 
 ## 快速上手
 
@@ -23,13 +30,13 @@ python -m pip install -r requirements.txt
 python cli.py list-servers
 ```
 
-按[配置参考](docs/reference.md#configuration)添加服务器后执行：
+新建服务器：按[配置参考](docs/reference.md#configuration)把连接字段写成 YAML，用 `python cli.py create-server my-server my-server.yml` 或 MCP 的 `ssh_create_server` 提交。之后执行：
 
 ```bash
 python cli.py my-server run "uptime"
 ```
 
-agent 安装见[安装指南](docs/install.md)，可选择装载 CLI 技能或注册 MCP。`list-servers` 只读取本地配置，不连接服务器。
+agent 安装见[安装指南](docs/install.md)，可选择装载 CLI 技能或注册 MCP。服务器条目的增删改走 CLI 命令或 MCP 工具，不直接读写配置文件本身；用户说的服务器不在 `list-servers` 结果里时，先列出相近名称供选择，或请用户补齐 host、用户和认证信息再新建。`list-servers` 只读取本地配置，不连接服务器。
 
 ## 使用场景
 

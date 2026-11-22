@@ -11,7 +11,7 @@ description: >
 
 [中文参考](zh-CN/SKILL.mcp.md)
 
-Call `ssh_list_servers` first, then use `ssh_list_aliases` to confirm aliases. Configuration and runtime semantics are maintained in the [runtime reference](docs/reference.md). For CLI use, see [SKILL.md](SKILL.md).
+Call `ssh_list_servers` first, then use `ssh_list_aliases` to confirm aliases. Change server configurations only through the create/update/copy/delete tools below; do not read or edit the YAML files directly. When a user-named server is missing from the list, offer the closest names as candidates, or collect host, user, and authentication and create it with `ssh_create_server`. Configuration and runtime semantics are maintained in the [runtime reference](docs/reference.md). For CLI use, see [SKILL.md](SKILL.md).
 
 ## 22 static tools
 
