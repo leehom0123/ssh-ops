@@ -7,6 +7,7 @@
 ## 特色
 
 - **一个核心，两个入口。** 命令执行、脚本上传运行、SFTP 传输、远端文本编辑和后台任务都由同一套 Python 代码实现，CLI 与 MCP 服务（支持 stdio 和 HTTP 两种传输）只是入口不同。终端里验证过的操作，可以直接交给 agent 通过 MCP 调用。
+- **按名字管一组服务器。** 每台服务器是一份 YAML 条目，host、认证、shell、脚本目录、别名和安全过滤各自独立。agent 用 `list-servers` 摸清机器清单，按名字指定目标，Linux 和 Windows 机器走同一个界面。连接可走 SOCKS5 代理，失败自动回退直连；连接只在单进程内复用，CLI 和 MCP 各自建立自己的连接。
 - **别名即工具。** 常用命令登记在服务器 YAML 里成为别名：一条命名命令或脚本，带自己的 timeout 和 sudo 设置。MCP 服务为每个别名生成一个零参数工具（如 `ssh_alias.my-server.health`），agent 直接调用，不用重新拼命令、判断权限：
 
   ```yaml
@@ -19,7 +20,7 @@
 
 - **后台任务与分页读取。** 构建、迁移这类耗时操作以背景任务启动，拿任务 ID 轮询，不必占住一次 MCP 请求；任务状态记在远端的标记文件里，本地进程或 MCP 重启后依然可查。日志和文本按字节分页读取，大文件不会整段进入 agent 上下文。背景任务要求 bash 服务器。
 - **安全限制。** 主机密钥在认证前探测，默认首次信任（`tofu`），中间人拿不到登录口令；命令按黑白名单过滤，上传下载核对本地和远端路径允许列表，sudo 密码配在 YAML 里，不嵌在命令行中。正则过滤是护栏不是沙箱，各项边界见[运行参考](docs/reference.md)。
-- **跨平台。** ssh-ops 内置 paramiko（纯 Python 的 SSH 实现），运行时不需要系统 ssh 客户端，Windows、Linux、macOS 均可。远端按 `shell` 设置区分 bash（Linux、macOS 服务器）和 cmd、powershell（装了 OpenSSH 服务的 Windows 服务器），该设置决定辅助命令用哪套模板，不翻译用户命令。连接可走 SOCKS5 代理，失败自动回退直连；连接只在单进程内复用，CLI 和 MCP 各自建立自己的连接。
+- **客户机不限系统，服务器不限 shell。** ssh-ops 内置 paramiko（纯 Python 的 SSH 实现），运行时不需要系统 ssh 客户端，Windows、Linux、macOS 均可。服务器端 `shell` 覆盖 bash（Linux、macOS 服务器）和 cmd、powershell（装了 OpenSSH 服务的 Windows 服务器），该设置只决定辅助命令用哪套模板，不翻译用户命令。
 
 ## 快速上手
 

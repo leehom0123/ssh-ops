@@ -7,6 +7,7 @@ Operate remote SSH servers from the CLI or over MCP: one Python core behind both
 ## Highlights
 
 - **One core, two entry points.** Commands, scripts, SFTP transfers, remote text editing, and background jobs are implemented once in the Python core; the CLI and the MCP server (stdio and HTTP transports) differ only in how you reach them. An operation you verified in the terminal can be handed to an agent over MCP as it is.
+- **Manage a fleet by name.** Each server is a YAML entry with its own host, authentication, shell, script directory, aliases, and security filters. Agents discover the set with `list-servers` and target any machine by name, operating Linux and Windows boxes through one interface. Connections may route through a SOCKS5 proxy with automatic fallback to direct, and are reused within one process, not shared between the CLI and MCP processes.
 - **Aliases are ready-made tools.** Register a command or script in a server YAML as an alias, with its own timeout and sudo setting. The MCP server generates a zero-argument tool for each alias (for example `ssh_alias.my-server.health`), so the agent calls the registered operation without rebuilding the command line or deciding on privileges:
 
   ```yaml
@@ -19,7 +20,7 @@ Operate remote SSH servers from the CLI or over MCP: one Python core behind both
 
 - **Background jobs and paged reads.** Start long builds or migrations as background jobs and poll by job ID instead of holding one MCP request open; job state lives in marker files on the remote server and stays queryable after the local process or the MCP server restarts. Logs and text are read in byte-sized pages, so a large file never arrives whole in the agent's context. Background jobs require a bash server.
 - **Security limits.** The host key is probed before authentication (trust-on-first-use by default, `tofu`), so a man-in-the-middle cannot capture the login password. Commands pass blacklist/whitelist filtering, transfers check local and remote path allow-lists, and the sudo password lives in the YAML, not in the command line. Regex filtering is a guardrail, not a sandbox; each limit is documented in the [runtime reference](docs/reference.md).
-- **Cross-platform.** ssh-ops ships paramiko, a pure-Python SSH implementation, so the machine running it needs no system ssh client; Windows, Linux, and macOS all work. On the remote side, `shell` selects between bash (Linux, macOS servers) and cmd or powershell (Windows servers running the OpenSSH service); the setting picks the templates for the tool's own helper commands and does not translate user commands. Connections can route through a SOCKS5 proxy and fall back to direct automatically on failure; connections are reused only within one process, so the CLI and the MCP server keep separate ones.
+- **Any client OS, any server shell.** ssh-ops ships paramiko, a pure-Python SSH implementation, so the machine running it needs no system ssh client; Windows, Linux, and macOS all work. On the server side, `shell` covers bash (Linux, macOS servers) and cmd or powershell (Windows servers running the OpenSSH service); the setting picks the templates for the tool's own helper commands and does not translate user commands.
 
 ## Quick start
 
