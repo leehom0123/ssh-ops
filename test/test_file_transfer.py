@@ -135,3 +135,41 @@ def test_download_file_handler_maps_args_to_connection():
     expected = mcp_server._mcp_safe_timeout(60)
     conn.download_file.assert_called_once_with(
         "/etc/app.log", "./app.log", expected, False, True)
+
+
+def test_upload_file_uses_posix_parent_on_bash(tmp_path):
+    # Regression: Path() parsed the remote parent with host syntax, so a
+    # Windows client sent 'mkdir -p \home\bit\scripts' and the server made
+    # literal-backslash junk directories instead of the real parent.
+    local = tmp_path / "f.txt"
+    local.write_text("x")
+    conn = _conn()
+    conn.run = MagicMock(return_value=_ok_result())
+    with patch("paramiko.SFTPClient"):
+        conn.upload_file(str(local), "/home/bit/scripts/sub/f.txt")
+    mkdir_cmd = conn.run.call_args_list[0][0][0]
+    assert mkdir_cmd == "mkdir -p /home/bit/scripts/sub"
+
+
+def test_upload_file_uses_ntpath_parent_on_cmd(tmp_path):
+    local = tmp_path / "f.txt"
+    local.write_text("x")
+    conn = _conn({"shell": "cmd"})
+    conn.run = MagicMock(return_value=_ok_result())
+    with patch("paramiko.SFTPClient"):
+        conn.upload_file(str(local), "C:\\srv\\app\\f.txt")
+    mkdir_cmd = conn.run.call_args_list[0][0][0]
+    assert mkdir_cmd == 'if not exist "C:\\srv\\app" mkdir "C:\\srv\\app"'
+
+
+def test_upload_file_mkdir_failure_names_the_directory(tmp_path):
+    # A failed mkdir must surface as "cannot create remote directory
+    # <path>", not a bare SFTP [Errno 2] that names nothing.
+    local = tmp_path / "f.txt"
+    local.write_text("x")
+    conn = _conn()
+    conn.run = MagicMock(return_value={"stdout": "", "stderr": "Permission denied",
+                                       "code": 1})
+    with pytest.raises(RuntimeError,
+                       match=r"cannot create remote directory /srv/app: Permission denied"):
+        conn.upload_file(str(local), "/srv/app/f.txt")

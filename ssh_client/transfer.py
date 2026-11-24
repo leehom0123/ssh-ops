@@ -7,6 +7,7 @@ transfer module's own business, so every path-transfer bug lives in this
 one file.
 """
 import hashlib
+import ntpath
 import os
 import posixpath
 import re
@@ -184,6 +185,34 @@ class TransferMixin:
                 return False
         return True
 
+    def _remote_parent(self, remote_path: str) -> str:
+        """Parent directory of a remote path, parsed with the server's syntax.
+
+        ``Path`` parses with the host OS, so on Windows a bash-server path
+        like ``/home/u/scripts/a.sh`` would yield the parent
+        ``\\home\\u\\scripts`` and the server would receive literal
+        backslash directories. Select by the server's shell instead.
+        """
+        if self._is_unix():
+            return posixpath.dirname(remote_path)
+        return ntpath.dirname(remote_path)
+
+    def _ensure_remote_parent(self, remote_path: str, sudo: bool = False) -> None:
+        """Create the remote file's parent directory; report failures by path.
+
+        Ignoring the mkdir result would leave the next SFTP call to raise a
+        bare ``[Errno 2]`` without naming the directory that is missing.
+        """
+        parent = self._remote_parent(remote_path)
+        if not parent:
+            return
+        result = self.run(self._cmd("mkdir", path=parent), timeout=10,
+                          sudo=sudo, internal=True)
+        if result["code"] != 0:
+            detail = (result["stderr"] or "").strip()[:200]
+            reason = f": {detail}" if detail else f": exit code {result['code']}"
+            raise RuntimeError(f"cannot create remote directory {parent}{reason}")
+
     def upload_file(self, local_path: str, remote_path: str, timeout: int = 300,
                     overwrite: bool = True, sudo: bool = False,
                     executable: bool = False) -> dict:
@@ -201,9 +230,7 @@ class TransferMixin:
                              sudo=sudo, internal=True)
             if check["code"] == 0:
                 raise FileExistsError(f"Remote file already exists: {remote_path}")
-        remote_parent = str(Path(remote_path).parent)
-        self.run(self._cmd("mkdir", path=remote_parent), timeout=10, sudo=sudo,
-                 internal=True)
+        self._ensure_remote_parent(remote_path, sudo=sudo)
         try:
             sftp = self._sftp(timeout=timeout)
             if sudo:
@@ -368,8 +395,7 @@ class TransferMixin:
         ``mode`` applies only to newly created files; existing files keep
         their current owner and mode.
         """
-        self.run(self._cmd("mkdir", path=posixpath.dirname(remote_path)),
-                 timeout=10, internal=True)
+        self._ensure_remote_parent(remote_path)
         sftp = self._sftp(timeout=self.timeout)
         try:
             try:

@@ -273,7 +273,9 @@ CMD_TEMPLATES = {
         "tmp_prefix":   "/tmp",
     },
     "cmd": {
-        "mkdir":        "mkdir {path} 2>nul",
+        # Idempotent so callers can check the exit code: cmd's mkdir reports
+        # an error (and sets errorlevel) when the directory already exists.
+        "mkdir":        "if not exist {path} mkdir {path}",
         "file_exists":  "if exist {path} (echo exists) else exit 1",
         "run_script":   "call {path}",
         "chmod":        "",  # no-op on Windows cmd
